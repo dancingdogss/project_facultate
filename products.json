@@ -1,0 +1,46 @@
+[
+  {
+    "id": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
+    "name": "Cox Top",
+    "price": 50,
+    "stock": 105,
+    "description": "Top Cox product.",
+    "category": "Cox",
+    "image": "products_pics\\cox.png",
+    "location_image": "AgACAgQAAxkBAAIKrWhJrUuReLAcM9LY9TENWRu7vMZbAAIyxzEb6dxRUi000phHRSUEAQADAgADeAADNgQ",
+    "location_caption": "blanaomen"
+  },
+  {
+    "id": "d4a1d71b-38e8-41b3-8243-a3520642e2db",
+    "name": "Klein Premium",
+    "price": 75,
+    "stock": 180,
+    "description": "Premium Klein product.",
+    "category": "Klein",
+    "image": "products_pics\\klein.png",
+    "location_image": "AgACAgQAAxkBAAIKDGhJWiccymvtcI2wTbfUtmyuTqGiAALDyDEb6dxJUgAByujIqUiw0gEAAwIAA3kAAzYE",
+    "location_caption": "gagica"
+  },
+  {
+    "id": "a98a987c-2708-43ae-aedd-a6cff7dbfa0d",
+    "name": "Golden Teacher",
+    "price": 100,
+    "stock": 198,
+    "description": "Deluxe Shrooms product.",
+    "category": "Shrooms",
+    "image": "products_pics\\shrooms.png",
+    "location_image": "AgACAgQAAxkBAAIKrWhJrUuReLAcM9LY9TENWRu7vMZbAAIyxzEb6dxRUi000phHRSUEAQADAgADeAADNgQ",
+    "location_caption": "asda"
+  },
+  {
+    "id": "cc0026c0-c6db-4fb3-831e-5a3d6b1a6d28",
+    "name": "test",
+    "price": 2,
+    "stock": 174,
+    "category": "testing",
+    "image": "products_pics\\262983718_603650570939514_8712136708367475152_n.png",
+    "description": "maimuta curcubeu",
+    "location_image": "AgACAgQAAxkBAAISZGhLJzawNaFPUcrz10XuRs742Gq7AALVyjEb0V1ZUhpFUmqPzB5yAQADAgADeAADNgQ",
+    "location_caption": "lenon"
+  }
+]

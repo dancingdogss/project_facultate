@@ -1,0 +1,144 @@
+=========================================================
+                TELEGRAM SHOP BOT DOCUMENTATION
+=========================================================
+
+OVERVIEW
+--------
+This Telegram bot allows users to browse products, place orders, check their balance, view their profile, and deposit Litecoin (LTC). 
+Admins can manage products, view/export orders, and manage user balances. 
+All data is stored in JSON files.
+
+---------------------------------------------------------
+USER FEATURES
+---------------------------------------------------------
+- View Products: 
+    Browse all available products, see price, stock, and order or view details.
+
+- Order Products: 
+    Place an order by selecting a product and quantity. The bot checks stock and user balance.
+
+- My Orders: 
+    View your order history, including product name, quantity, and order status.
+
+- My Balance: 
+    Check your current coin balance.
+
+- Profile: 
+    View your profile info, join date, order count, and balance.
+
+- Deposit LTC: 
+    Get a Litecoin deposit address (placeholder). Balance is updated manually.
+
+- Help: 
+    Get usage instructions.
+
+- Categories: 
+    /categories – List product categories and browse by category.
+
+- Search: 
+    /search <keyword> – Search for products by name or description.
+
+---------------------------------------------------------
+ADMIN FEATURES
+---------------------------------------------------------
+- Add Product:
+    /addproduct Name | Price | FileID_or_ImageURL | Stock | [Description] | [Category]
+    Example: /addproduct Magic Potion | 50 | <file_id> | 10 | Restores health | Potions
+
+- Remove Product:
+    /removeproduct <index>
+    Example: /removeproduct 0
+
+- Edit Product:
+    /editproduct <index> | <field> | <new_value>
+    Fields: name, price, image, stock, description
+
+- Product List:
+    /productlist – List all products with their indexes.
+
+- Export Orders:
+    /exportorders – Export all orders as a CSV file.
+
+- All Orders:
+    /allorders – View all orders for all users.
+
+- Set Order Status:
+    /setorderstatus <user_id> <order_index> <status>
+    Example: /setorderstatus 123456789 0 shipped
+    Notifies the user of the status change.
+
+- Balance Management:
+    /balance – Check your own balance.
+    /addcoins <user_id> <amount> – Add coins to a user.
+    /setcoins <user_id> <amount> – Set a user’s balance.
+    /topusers – Show top users by coin balance.
+
+---------------------------------------------------------
+DATA STORAGE
+---------------------------------------------------------
+- products.json:
+    List of products with fields: name, price, image, stock, description, category.
+
+- orders.json:
+    User orders, keyed by user ID. Each order includes name, quantity, and order_status.
+
+- balances.json:
+    User coin balances, keyed by user ID.
+
+- first_join.json:
+    User join dates.
+
+- deposit_addresses.json:
+    User Litecoin deposit addresses (placeholder).
+
+---------------------------------------------------------
+MAIN COMMANDS
+---------------------------------------------------------
+| Command                        | Description                          | Who        |
+|---------------------------------|--------------------------------------|------------|
+| /start                          | Show main menu and balance           | User       |
+| /categories                     | List product categories              | User       |
+| /search <keyword>               | Search products                      | User       |
+| /addproduct ...                 | Add a new product                    | Admin      |
+| /removeproduct <index>          | Remove a product                     | Admin      |
+| /editproduct ...                | Edit a product                       | Admin      |
+| /productlist                    | List all products                    | Admin      |
+| /exportorders                   | Export all orders as CSV             | Admin      |
+| /allorders                      | View all orders                      | Admin      |
+| /setorderstatus ...             | Update order status and notify user  | Admin      |
+| /balance                        | Show your balance                    | User/Admin |
+| /addcoins <user_id> <amount>    | Add coins to a user                  | Admin      |
+| /setcoins <user_id> <amount>    | Set a user’s balance                 | Admin      |
+| /topusers                       | Show top users by balance            | Admin      |
+| /deposit_ltc                    | Show your Litecoin deposit address   | User       |
+
+---------------------------------------------------------
+ORDER FLOW
+---------------------------------------------------------
+1. User selects a product and quantity.
+2. Bot checks stock and balance.
+3. On confirmation, order is saved with status "pending", stock and balance are updated.
+4. Admins are notified of new orders.
+5. Admins can update order status, which notifies the user.
+
+---------------------------------------------------------
+PRODUCT BROWSING
+---------------------------------------------------------
+- Users can browse all products, filter by category, or search by keyword.
+- Each product shows name, price, stock, and category.
+
+---------------------------------------------------------
+DEPOSIT SYSTEM
+---------------------------------------------------------
+- Users get a unique (placeholder) Litecoin address.
+- Deposits are not actually processed; this is a stub for future integration.
+
+---------------------------------------------------------
+TECHNICAL NOTES
+---------------------------------------------------------
+- All data is persistent and stored in JSON files.
+- Only users in ADMIN_IDS can use admin commands.
+- Error handling is provided for invalid input and unavailable actions.
+- The bot uses async handlers and the latest python-telegram-bot API.
+
+=========================================================
