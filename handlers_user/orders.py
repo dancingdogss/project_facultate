@@ -4,11 +4,14 @@ from config import ADMIN_IDS, DEFAULT_START_COINS
 from db import SessionLocal
 from db_utils import (
     get_product_by_name, update_product_stock, get_user, set_user_balance,
-    get_orders_by_user, add_order, add_profit
+    get_orders_by_user, add_order, add_profit, get_unused_location_photo, mark_location_photo_delivered, archive_delivered_photo
 )
+from photo_utils import save_delivered_photo_to_folder
 from datetime import datetime
 
 ORDER_QUANTITY, ORDER_CONFIRM = range(2)
+
+# Order Management Handlers
 
 async def handle_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -75,31 +78,39 @@ async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ORDER_CONFIRM
 
-async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def confirm_order(update, context):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
     product = context.user_data.get("order_product")
     qty = context.user_data.get("order_quantity", 1)
+
     async with SessionLocal() as session:
         # Refresh product info
         product_latest = await get_product_by_name(session, product.name)
         if product_latest is None:
             await query.message.reply_text("Product not found or has been removed.")
             return ConversationHandler.END
+
         current_stock = product_latest.stock
         price = product_latest.price
         user = await get_user(session, user_id)
         balance = user.balance if user else DEFAULT_START_COINS
+
         if qty > current_stock:
             await query.message.reply_text(f"Sorry, not enough stock left. Only {current_stock} available.")
             return ConversationHandler.END
+
         if price * qty > balance:
             await query.message.reply_text(f"Not enough coins! You need {price * qty}, but have {balance}.")
             return ConversationHandler.END
-        # Update stock
+
+        # Update stock and user balance
         product_latest.stock -= qty
+        user.balance -= price * qty
         await session.commit()
+
+        # Low stock alert
         new_stock = product_latest.stock
         low_stock_threshold = 2
         if new_stock <= low_stock_threshold:
@@ -115,25 +126,24 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                 except Exception:
                     pass
-        # Update user balance
-        user.balance -= price * qty
-        await session.commit()
+
         # Add order
-        order_status = "completed" if product_latest.image else "pending"
         order = await add_order(
             session,
             user_id=user_id,
             product_id=product_latest.id,
             product_name=product_latest.name,
             quantity=qty,
-            status=order_status,
+            status="completed",
             created_at=datetime.utcnow()
         )
         await session.commit()
+
         await query.message.reply_text(
             f"✅ Order confirmed: {qty} x {product.name} for {price * qty} coins!\n"
             f"Your new balance: {user.balance} coins."
         )
+
         # Log profit for admin
         await add_profit(
             session,
@@ -144,6 +154,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stock_id=order.id,
             dt=order.created_at
         )
+
         # Notify admins about the new order
         for admin_id in ADMIN_IDS:
             try:
@@ -155,23 +166,30 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"Product: {product.name}\n"
                         f"Quantity: {qty}\n"
                         f"Total: {price * qty} coins\n"
-                        f"Status: {order_status}"
+                        f"Status: completed"
                     ),
                     parse_mode="Markdown"
                 )
             except Exception:
                 pass
-        location_image = product_latest.image
-        location_caption = product_latest.description or "Here is your pickup location."
-        if location_image and order_status == "completed":
+
+        # --- Unique location photo logic ---
+        photo = await get_unused_location_photo(session, product_latest.id)
+        if photo:
             try:
                 await query.message.reply_photo(
-                    photo=location_image,
-                    caption=location_caption,
+                    photo=photo.file_id,
+                    caption=photo.caption or "Here is your pickup location.",
                     parse_mode="Markdown"
                 )
+                await mark_location_photo_delivered(session, photo.id, order.id)
+                await archive_delivered_photo(session, photo, order.id)
+                await save_delivered_photo_to_folder(photo)  # <--- Save photo to folder
             except Exception:
-                await query.message.reply_text("Could not send location photo.")
+                await query.message.reply_text("Could not send unique location photo.")
+        else:
+            await query.message.reply_text("No unique location photo available for this product at the moment.")
+
     return ConversationHandler.END
 
 async def cancel_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -1,6 +1,6 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from db import User, Delivery, Product, Order, Profit
+from db import User, Delivery, Product, Order, Profit, LocationPhoto, DeliveredPhoto
 import uuid
 from sqlalchemy import update as sql_update
 from datetime import datetime
@@ -95,7 +95,27 @@ async def get_delivery_by_id(session, delivery_id):
     result = await session.execute(select(Delivery).where(Delivery.id == delivery_id))
     return result.scalar_one_or_none()
 
+async def get_delivered_location_photos(session):
+    result = await session.execute(
+        select(LocationPhoto).where(LocationPhoto.is_delivered == True)
+    )
+    return result.scalars().all()
 
+async def get_available_location_photos(session):
+    result = await session.execute(
+        select(LocationPhoto).where(LocationPhoto.is_delivered == False)
+    )
+    return result.scalars().all()
+async def archive_delivered_photo(session, photo, order_id):
+    delivered = DeliveredPhoto(
+        id=str(uuid.uuid4()),
+        file_id=photo.file_id,
+        product_id=photo.product_id,
+        order_id=order_id,
+        delivered_at=datetime.utcnow()
+    )
+    session.add(delivered)
+    await session.commit()
 
 
 
@@ -116,6 +136,35 @@ async def add_product(session, name, price, stock, category):
     await session.commit()
     return new_product
 
+async def add_location_photo(session, product_id, file_id, caption=""):
+    photo = LocationPhoto(
+        id=str(uuid.uuid4()),
+        product_id=product_id,
+        file_id=file_id,
+        caption=caption,
+        is_delivered=False
+    )
+    session.add(photo)
+    await session.commit()
+    return photo
+
+
+async def get_unused_location_photo(session, product_id):
+    result = await session.execute(
+        select(LocationPhoto).where(
+            LocationPhoto.product_id == product_id,
+            LocationPhoto.is_delivered == False
+        ).limit(1)
+    )
+    return result.scalar_one_or_none()
+
+async def mark_location_photo_delivered(session, photo_id, order_id):
+    result = await session.execute(select(LocationPhoto).where(LocationPhoto.id == photo_id))
+    photo = result.scalar_one_or_none()
+    if photo:
+        photo.is_delivered = True
+        photo.order_id = order_id
+        await session.commit()
 
 async def get_product(session: AsyncSession, product_id: str):
     result = await session.execute(select(Product).where(Product.id == product_id))
@@ -248,3 +297,14 @@ async def add_user_balance(session, user_id, amount):
         session.add(user)
     await session.commit()
     return user
+
+async def archive_delivered_photo(session, photo, order_id):
+    delivered = DeliveredPhoto(
+        id=str(uuid.uuid4()),
+        file_id=photo.file_id,
+        product_id=photo.product_id,
+        order_id=order_id,
+        delivered_at=datetime.utcnow()
+    )
+    session.add(delivered)
+    await session.commit()

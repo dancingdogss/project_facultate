@@ -1,12 +1,17 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey
+import os
+from datetime import datetime
 
 DATABASE_URL = "sqlite+aiosqlite:///./botdata.db"
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
+
+
+
 
 class Product(Base):
     __tablename__ = "products"
@@ -29,13 +34,31 @@ class User(Base):
 class Order(Base):
     __tablename__ = "orders"
     id = Column(String, primary_key=True, index=True)
-    user_id = Column(String, ForeignKey("users.id"))
+    user_id = Column(String)
     product_id = Column(String, ForeignKey("products.id"))
+    product_name = Column(String)  # Add this line if missing
     quantity = Column(Integer)
     status = Column(String)
     created_at = Column(DateTime)
-
+    location_photo_id = Column(String, ForeignKey("location_photos.id"), nullable=True)
 # Add more models as needed (Deliveries, Profits, etc.)
+class LocationPhoto(Base):
+    __tablename__ = "location_photos"
+    id = Column(String, primary_key=True, index=True)
+    product_id = Column(String, ForeignKey("products.id"))
+    file_id = Column(String)
+    caption = Column(String)
+    is_delivered = Column(Boolean, default=False)
+    order_id = Column(String, ForeignKey("orders.id"), nullable=True)
+
+class DeliveredPhoto(Base):
+    __tablename__ = "delivered_photos"
+    id = Column(String, primary_key=True, index=True)
+    file_id = Column(String)
+    product_id = Column(String)
+    order_id = Column(String)
+    delivered_at = Column(DateTime, default=datetime.utcnow)
+
 
 
 class Profit(Base):
@@ -62,3 +85,11 @@ class Delivery(Base):
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+async def create_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+# Also add this function to initialize the database
+async def init_db():
+    await create_tables()

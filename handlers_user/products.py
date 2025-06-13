@@ -21,35 +21,55 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     cat = query.data.replace("cat_", "")
+    
     async with SessionLocal() as session:
         products = await get_products_by_category(session, cat)
+    
     if not products:
         await query.message.reply_text(f"No products found in category {cat}.")
         return
+    
     for product in products:
         keyboard = [
-            [InlineKeyboardButton(f"Order {product.name}", callback_data=f"order_{product.name}")],
+            [InlineKeyboardButton(f"🛒 Order {product.name}", callback_data=f"order_{product.name}")],
             [InlineKeyboardButton("ℹ️ Details", callback_data=f"details_{product.name}")],
             [InlineKeyboardButton("🔙 Back to Categories", callback_data="back_to_categories")],
             [InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_menu")]
         ]
+        
         caption = (
             f"*{product.name}*\n"
-            f"Price: {product.price} coins\n"
-            f"Stock: {product.stock}\n"
-            f"Category: {product.category or 'N/A'}"
+            f"💰 Price: {product.price} coins\n"
+            f"📦 Stock: {product.stock}\n"
+            f"🏷️ Category: {product.category or 'N/A'}\n\n"
+            f"{product.description or 'No description available.'}"
         )
-        try:
-            await query.message.reply_photo(
-                photo=product.image,
-                caption=caption,
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-        except Exception as e:
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Send with photo if available, otherwise send text
+        if product.image:
+            try:
+                await query.message.reply_photo(
+                    photo=product.image,
+                    caption=caption,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                # Fallback to text if photo fails
+                await query.message.reply_text(
+                    f"📷 Photo not available\n\n{caption}",
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+        else:
             await query.message.reply_text(
-                f"Could not display product {product.name}: {e}"
+                f"📷 No photo available\n\n{caption}",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
             )
+
 
 async def product_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
