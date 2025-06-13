@@ -19,89 +19,33 @@ async def create_user_if_not_exists(session, user_id, join_date, balance):
         await session.commit()
     return user
 
-# --- Order Management ---
-async def add_order(session, user_id, product_id, product_name, quantity, status, created_at):
-    order = Order(
-        id=str(uuid.uuid4()),
-        user_id=user_id,
-        product_id=product_id,
-        product_name=product_name,
-        quantity=quantity,
-        status=status,
-        created_at=created_at
-    )
-    session.add(order)
+async def get_all_users(session):
+    result = await session.execute(select(User))
+    return result.scalars().all()
+
+async def set_user_balance(session, user_id, balance):
+    user = await get_user(session, user_id)
+    if user:
+        user.balance = balance
+    else:
+        user = User(id=user_id, balance=balance)
+        session.add(user)
     await session.commit()
-    return order
+    return user
 
-async def get_order_by_id(session, order_id):
-    result = await session.execute(select(Order).where(Order.id == order_id))
-    return result.scalar_one_or_none()
-
-async def get_orders_by_user(session, user_id):
-    result = await session.execute(
-        select(Order).where(Order.user_id == user_id).order_by(Order.created_at.desc())
-    )
-    return result.scalars().all()
-
-async def get_orders(session, limit=30):
-    result = await session.execute(select(Order).order_by(Order.created_at.desc()).limit(limit))
-    return result.scalars().all()
-
-async def get_user_orders_count(session, user_id):
-    result = await session.execute(select(Order).where(Order.user_id == user_id))
-    return len(result.scalars().all())
-
-async def update_order_status(session, order_id, new_status):
-    order = await get_order_by_id(session, order_id)
-    if not order:
-        return None
-    if order.status == "completed":
-        return "completed"
-    order.status = new_status
+async def add_user_balance(session, user_id, amount):
+    user = await get_user(session, user_id)
+    if user:
+        user.balance += amount
+    else:
+        user = User(id=user_id, balance=amount)
+        session.add(user)
     await session.commit()
-    return order
+    return user
 
-# --- Delivery Management ---
-async def get_all_deliveries(session):
-    result = await session.execute(select(Delivery))
+async def get_top_users(session, limit=10):
+    result = await session.execute(select(User).order_by(User.balance.desc()).limit(limit))
     return result.scalars().all()
-
-async def remove_delivery(session, delivery_id):
-    result = await session.execute(select(Delivery).where(Delivery.id == delivery_id))
-    delivery = result.scalar_one_or_none()
-    if delivery:
-        await session.delete(delivery)
-        await session.commit()
-        return True
-    return False
-
-async def get_delivery_by_id(session, delivery_id):
-    result = await session.execute(select(Delivery).where(Delivery.id == delivery_id))
-    return result.scalar_one_or_none()
-
-async def get_delivered_location_photos(session):
-    result = await session.execute(
-        select(LocationPhoto).where(LocationPhoto.is_delivered == True)
-    )
-    return result.scalars().all()
-
-async def get_available_location_photos(session):
-    result = await session.execute(
-        select(LocationPhoto).where(LocationPhoto.is_delivered == False)
-    )
-    return result.scalars().all()
-
-async def archive_delivered_photo(session, photo, order_id):
-    delivered = DeliveredPhoto(
-        id=str(uuid.uuid4()),
-        file_id=photo.file_id,
-        product_id=photo.product_id,
-        order_id=order_id,
-        delivered_at=datetime.utcnow()
-    )
-    session.add(delivered)
-    await session.commit()
 
 # --- Product Management ---
 async def add_product(session, name, price, stock, category, description):
@@ -119,51 +63,15 @@ async def add_product(session, name, price, stock, category, description):
     return new_product
 
 async def add_product_photo(session, product_id, file_id_or_name):
-    """
-    file_id_or_name: can be a Telegram file_id or a local filename (e.g., 'cox.png').
-    This implementation assumes you use local files from products_pics.
-    """
     product = await session.get(Product, product_id)
     if product:
-        # If file_id_or_name is a filename, store the path
         if not file_id_or_name.startswith("http") and not file_id_or_name.startswith("AgAC"):
-            # It's a local file, store the path
             product.image = os.path.join("products_pics", file_id_or_name)
         else:
-            # It's a Telegram file_id or URL
             product.image = file_id_or_name
         await session.commit()
         return product
     return None
-
-async def add_location_photo(session, product_id, file_id, caption=""):
-    photo = LocationPhoto(
-        id=str(uuid.uuid4()),
-        product_id=product_id,
-        file_id=file_id,
-        caption=caption,
-        is_delivered=False
-    )
-    session.add(photo)
-    await session.commit()
-    return photo
-
-async def get_unused_location_photo(session, product_id):
-    result = await session.execute(
-        select(LocationPhoto).where(
-            LocationPhoto.product_id == product_id,
-            LocationPhoto.is_delivered == False
-        ).limit(1)
-    )
-    return result.scalar_one_or_none()
-
-async def mark_location_photo_delivered(session, photo_id, order_id):
-    result = await session.execute(select(LocationPhoto).where(LocationPhoto.id == photo_id))
-    photo = result.scalar_one_or_none()
-    if photo:
-        photo.is_delivered = True
-        photo.order_id = order_id
-        await session.commit()
 
 async def get_product(session: AsyncSession, product_id: str):
     result = await session.execute(select(Product).where(Product.id == product_id))
@@ -175,7 +83,7 @@ async def get_product_by_name(session, name):
 
 async def get_products_by_category(session, category):
     result = await session.execute(select(Product).where(Product.category == category))
-    return result.scalars().all() 
+    return result.scalars().all()
 
 async def get_all_products(session):
     result = await session.execute(select(Product))
@@ -226,11 +134,142 @@ async def edit_product(session, product_id, field, value):
     await session.commit()
     return True
 
+# --- Order Management ---
+async def add_order(session, user_id, product_id, product_name, quantity, status, created_at):
+    order = Order(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        product_id=product_id,
+        product_name=product_name,
+        quantity=quantity,
+        status=status,
+        created_at=created_at
+    )
+    session.add(order)
+    await session.commit()
+    return order
+
+async def get_order_by_id(session, order_id):
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    return result.scalar_one_or_none()
+
+async def get_orders_by_user(session, user_id):
+    result = await session.execute(
+        select(Order).where(Order.user_id == user_id).order_by(Order.created_at.desc())
+    )
+    return result.scalars().all()
+
+async def get_orders(session, limit=30):
+    result = await session.execute(select(Order).order_by(Order.created_at.desc()).limit(limit))
+    return result.scalars().all()
+
+async def get_all_orders(session):
+    result = await session.execute(select(Order))
+    return result.scalars().all()
+
+async def get_user_orders_count(session, user_id):
+    result = await session.execute(select(Order).where(Order.user_id == user_id))
+    return len(result.scalars().all())
+
+async def update_order_status(session, order_id, new_status):
+    order = await get_order_by_id(session, order_id)
+    if not order:
+        return None
+    if order.status == "completed":
+        return "completed"
+    order.status = new_status
+    await session.commit()
+    return order
+
+# --- Delivery Management ---
+async def get_all_deliveries(session):
+    result = await session.execute(select(Delivery))
+    return result.scalars().all()
+
+async def remove_delivery(session, delivery_id):
+    result = await session.execute(select(Delivery).where(Delivery.id == delivery_id))
+    delivery = result.scalar_one_or_none()
+    if delivery:
+        await session.delete(delivery)
+        await session.commit()
+        return True
+    return False
+
+async def get_delivery_by_id(session, delivery_id):
+    result = await session.execute(select(Delivery).where(Delivery.id == delivery_id))
+    return result.scalar_one_or_none()
+
+# --- Location Photo Management ---
+async def add_location_photo(session, product_id, file_id, caption=""):
+    photo = LocationPhoto(
+        id=str(uuid.uuid4()),
+        product_id=product_id,
+        file_id=file_id,
+        caption=caption,
+        is_delivered=False
+    )
+    session.add(photo)
+    await session.commit()
+    return photo
+
+async def get_unused_location_photo(session, product_id):
+    result = await session.execute(
+        select(LocationPhoto).where(
+            LocationPhoto.product_id == product_id,
+            LocationPhoto.is_delivered == False
+        ).limit(1)
+    )
+    return result.scalar_one_or_none()
+
+async def get_unused_location_photos_by_product(session, product_id, limit):
+    result = await session.execute(
+        select(LocationPhoto).where(
+            LocationPhoto.product_id == product_id,
+            LocationPhoto.is_delivered == False
+        ).limit(limit)
+    )
+    return result.scalars().all()
+
+async def mark_location_photo_delivered(session, photo_id, order_id):
+    result = await session.execute(select(LocationPhoto).where(LocationPhoto.id == photo_id))
+    photo = result.scalar_one_or_none()
+    if photo:
+        photo.is_delivered = True
+        photo.order_id = order_id
+        await session.commit()
+
 async def get_location_photos_by_product(session, product_id):
     result = await session.execute(
         select(LocationPhoto).where(LocationPhoto.product_id == product_id)
     )
     return result.scalars().all()
+
+async def get_delivered_location_photos(session):
+    result = await session.execute(
+        select(LocationPhoto).where(LocationPhoto.is_delivered == True)
+    )
+    return result.scalars().all()
+
+async def get_available_location_photos(session):
+    result = await session.execute(
+        select(LocationPhoto).where(LocationPhoto.is_delivered == False)
+    )
+    return result.scalars().all()
+
+# --- Delivered Photo Logging ---
+async def log_delivered_photo(session, order_id, user_id, product_id, product_name, file_id, caption):
+    delivered_photo = DeliveredPhoto(
+        id=str(uuid.uuid4()),
+        order_id=order_id,
+        user_id=user_id,
+        product_id=product_id,
+        product_name=product_name,
+        file_id=file_id,
+        caption=caption,
+        delivered_at=datetime.utcnow()
+    )
+    session.add(delivered_photo)
+    await session.commit()
 
 # --- Profit Management ---
 async def add_profit(session, user_id, product, quantity, amount, stock_id, dt):
@@ -254,46 +293,3 @@ async def get_profits(session, limit=30):
 async def get_all_profits(session):
     result = await session.execute(select(Profit))
     return result.scalars().all()
-
-async def get_all_users(session):
-    result = await session.execute(select(User))
-    return result.scalars().all()
-
-async def get_top_users(session, limit=10):
-    result = await session.execute(select(User).order_by(User.balance.desc()).limit(limit))
-    return result.scalars().all()
-
-async def get_all_orders(session):
-    result = await session.execute(select(Order))
-    return result.scalars().all()
-
-async def set_user_balance(session, user_id, balance):
-    user = await get_user(session, user_id)
-    if user:
-        user.balance = balance
-    else:
-        user = User(id=user_id, balance=balance)
-        session.add(user)
-    await session.commit()
-    return user
-
-async def add_user_balance(session, user_id, amount):
-    user = await get_user(session, user_id)
-    if user:
-        user.balance += amount
-    else:
-        user = User(id=user_id, balance=amount)
-        session.add(user)
-    await session.commit()
-    return user
-
-async def archive_delivered_photo(session, photo, order_id):
-    delivered = DeliveredPhoto(
-        id=str(uuid.uuid4()),
-        file_id=photo.file_id,
-        product_id=photo.product_id,
-        order_id=order_id,
-        delivered_at=datetime.utcnow()
-    )
-    session.add(delivered)
-    await session.commit()

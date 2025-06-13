@@ -4,14 +4,23 @@ from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Foreig
 import os
 from datetime import datetime
 
+
 DATABASE_URL = "sqlite+aiosqlite:///./botdata.db"
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
 
-
-
+class DeliveredPhoto(Base):
+    __tablename__ = "delivered_photos"
+    id = Column(String, primary_key=True)
+    order_id = Column(String, ForeignKey("orders.id"))
+    user_id = Column(String)
+    product_id = Column(String)
+    product_name = Column(String)
+    file_id = Column(String)
+    caption = Column(String)
+    delivered_at = Column(DateTime, default=datetime.utcnow)
 
 class Product(Base):
     __tablename__ = "products"
@@ -50,14 +59,6 @@ class LocationPhoto(Base):
     caption = Column(String)
     is_delivered = Column(Boolean, default=False)
     order_id = Column(String, ForeignKey("orders.id"), nullable=True)
-
-class DeliveredPhoto(Base):
-    __tablename__ = "delivered_photos"
-    id = Column(String, primary_key=True, index=True)
-    file_id = Column(String)
-    product_id = Column(String)
-    order_id = Column(String)
-    delivered_at = Column(DateTime, default=datetime.utcnow)
 
 
 

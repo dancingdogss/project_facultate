@@ -2,7 +2,7 @@ from telegram import Update, ReplyKeyboardRemove, InputMediaPhoto
 from telegram.ext import ContextTypes, ConversationHandler
 from db import SessionLocal
 from utils.db_utils import (
-    get_all_products, add_product, remove_product, edit_product,
+    get_all_products, add_product, remove_product, edit_product, get_products_by_category,
     add_product_photo, get_product_by_name, add_location_photo, get_location_photos_by_product
 )
 
@@ -24,7 +24,8 @@ async def product_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = ""
     for product in products:
         msg += (
-            f"*{product.name}*\n"
+            f"*ID:* {product.id}\n"
+            f"*Name:* {product.name}\n"
             f"💰 Price: {product.price} coins\n"
             f"📦 Stock: {product.stock}\n"
             f"🏷️ Category: {product.category or 'N/A'}\n"
@@ -91,6 +92,19 @@ async def cancel_add_product(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ConversationHandler.END
 
 # --- Remove Product ---
+
+async def remove_product_by_id_cmd(update, context):
+    if not context.args:
+        await update.message.reply_text("Usage: /removeproductid <product_id>")
+        return
+    product_id = context.args[0]
+    async with SessionLocal() as session:
+        result = await remove_product(session, product_id)
+    if result:
+        await update.message.reply_text(f"✅ Product with ID `{product_id}` removed.")
+    else:
+        await update.message.reply_text("Product not found.")
+
 async def remove_product_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter the name of the product to remove:")
     return REMOVE_NAME
@@ -106,6 +120,20 @@ async def remove_product_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(f"✅ Product '{name}' removed.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
+# --- Remove Products by Category ---
+async def remove_category_cmd(update, context):
+    if not context.args:
+        await update.message.reply_text("Usage: /removecategory <category>")
+        return
+    category = " ".join(context.args)
+    async with SessionLocal() as session:
+        products = await get_products_by_category(session, category)
+        if not products:
+            await update.message.reply_text("No products found in this category.")
+            return
+        for product in products:
+            await remove_product(session, product.id)
+    await update.message.reply_text(f"✅ All products in category '{category}' removed.")
 # --- Edit Product ---
 async def edit_product_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter the name of the product to edit:")
@@ -197,6 +225,36 @@ async def done_adding_location_photos(update: Update, context: ContextTypes.DEFA
     await update.message.reply_text("✅ Done adding location photos.", reply_markup=ReplyKeyboardRemove())
     context.user_data.clear()
     return ConversationHandler.END
+
+async def locationphotos_cmd(update, context):
+    if not context.args:
+        await update.message.reply_text("Usage: /locationphotos <product_name>")
+        return
+    product_name = " ".join(context.args)
+    async with SessionLocal() as session:
+        product = await get_product_by_name(session, product_name)
+        if not product:
+            await update.message.reply_text(f"Product '{product_name}' not found.")
+            return
+        photos = await get_location_photos_by_product(session, product.id)
+        available_photos = [p for p in photos if not p.is_delivered]
+    count = len(available_photos)
+    if count == 0:
+        await update.message.reply_text(f"No available location photos for '{product_name}'.")
+        return
+    await update.message.reply_text(
+        f"📦 *{product_name}* has *{count}* available location photo(s):",
+        parse_mode="Markdown"
+    )
+    # Telegram allows up to 10 photos per media group
+    batch = []
+    for idx, photo in enumerate(available_photos, 1):
+        caption = photo.caption if photo.caption else f"Location photo {idx}"
+        batch.append(InputMediaPhoto(media=photo.file_id, caption=caption if idx == 1 else None))
+        if len(batch) == 10 or idx == count:
+            await update.message.reply_media_group(batch)
+            batch = []
+
 
 # --- Show Location Photos ---
 async def show_location_photos_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):

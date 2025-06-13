@@ -7,18 +7,22 @@ from .orders import myorders_cmd
 from utils.db_utils import get_user, create_user_if_not_exists, get_user_orders_count, get_all_products
 from datetime import datetime
 from db import SessionLocal
+from config import ADMIN_CHAT_ID
 import os
 
 WELCOME_PHOTO_PATH = os.path.join("products_pics", "winners_shop.png")
 
 def get_main_menu_keyboard():
-    keyboard = [
-        ["🛒 Browse Products", "🔍 Search"],
-        ["📦 My Orders", "👤 Profile"],
-        ["💰 Balance", "💸 Deposit LTC"],
-        ["ℹ️ Help"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        [["🛒 Browse Products", "🔍 Search"],
+         ["📦 My Orders", "👤 Profile"],
+         ["💰 Balance", "💸 Deposit LTC"],
+         ["ℹ️ Help"]
+         
+         ],
+    
+         resize_keyboard=True
+    )
 
 async def start(update, context):
     user_id = str(update.message.from_user.id)
@@ -29,7 +33,14 @@ async def start(update, context):
             balance = DEFAULT_START_COINS
         else:
             balance = user.balance
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_CHAT_ID,
+                    text=f"👤 New user joined!\nName: {user.full_name}\nUsername: @{user.username or 'N/A'}\nID: {user_id}"
+                )
 
+            except Exception as e:
+                print(f"Error sending message to admin: {e}")
     if os.path.exists(WELCOME_PHOTO_PATH):
         with open(WELCOME_PHOTO_PATH, "rb") as photo:
             await update.message.reply_photo(

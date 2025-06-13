@@ -1,12 +1,24 @@
 import asyncio
 import os
 from telegram import Bot
-from db import SessionLocal
+from db import DeliveredPhoto, Order, Product, SessionLocal
 from sqlalchemy.future import select
-from db import DeliveredPhoto, Order, Product
+from datetime import datetime
 
 BOT_TOKEN = "7091591495:AAE6XrbI0a7g5_i9zS6vWi3_zY_U3HLnwUA"  # <-- your bot token
 SAVE_FOLDER = "delivered_photos"  # Folder to save images
+
+
+async def save_delivered_photo(bot, file_id, product_name, order_id, user_id, dt):
+    folder = "delivered_photos"
+    os.makedirs(folder, exist_ok=True)
+    # Format date/time for filename (e.g., 2025-06-15_13-45-00)
+    dt_str = dt.strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"{product_name}_{order_id}_{user_id}_{dt_str}.jpg"
+    path = os.path.join(folder, filename)
+    file = await bot.get_file(file_id)
+    await file.download_to_drive(path)
+    return path
 
 async def main():
     bot = Bot(token=BOT_TOKEN)

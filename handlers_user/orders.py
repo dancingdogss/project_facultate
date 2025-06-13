@@ -1,8 +1,15 @@
+from sqlalchemy import select
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
-from db import SessionLocal
-from utils.db_utils import add_order, get_product_by_name, get_orders_by_user
+from db import SessionLocal, LocationPhoto
+from utils.db_utils import (
+    add_order, get_product_by_name, get_orders_by_user, get_user, set_user_balance,
+    get_unused_location_photos_by_product, mark_location_photo_delivered, update_order_status,
+    log_delivered_photo  # <-- add this if not present 
+)
+from utils.file_utils import save_delivered_photo_to_folder
 from datetime import datetime
+
 
 ORDER_QUANTITY, ORDER_CONFIRM = range(2)
 
@@ -31,7 +38,11 @@ async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ORDER_CONFIRM
 
-async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+
+
+
+async def confirm_order(update, context):
     query = update.callback_query
     await query.answer()
     product_name = context.user_data.get("order_product")
@@ -39,11 +50,27 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
 
     async with SessionLocal() as session:
-        # Get product info
         product = await get_product_by_name(session, product_name)
         if not product:
             await query.message.reply_text("Sorry, this product no longer exists.")
             return ConversationHandler.END
+
+        db_user = await get_user(session, str(user.id))
+        total_price = product.price * quantity
+
+        if db_user.balance < total_price:
+            await query.message.reply_text("❌ Not enough balance for this order.")
+            return ConversationHandler.END
+
+        if product.stock < quantity:
+            await query.message.reply_text("❌ Not enough stock for this order.")
+            return ConversationHandler.END
+        
+        # Deduct balance and stock
+        db_user.balance -= total_price
+        product.stock -= quantity
+        await session.commit()
+
         # Save order to DB
         order = await add_order(
             session=session,
@@ -55,7 +82,61 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             created_at=datetime.utcnow()
         )
 
-    # Notify user
+        # Get all unused location photos for this product
+        result = await session.execute(
+            select(LocationPhoto).where(
+                LocationPhoto.product_id == product.id,
+                LocationPhoto.is_delivered == False
+            ).limit(quantity)
+        )
+        photos = result.scalars().all()
+
+        fulfilled = 0
+        for photo in photos:
+            # Mark photo as delivered
+            await mark_location_photo_delivered(session, photo.id, order.id)
+            # Send photo to user
+            try:
+                await context.bot.send_photo(
+                    chat_id=user.id,
+                    photo=photo.file_id,
+                    caption=photo.caption or "Here is your pickup location!"
+                )
+                # Log the delivered photo in the database
+                await log_delivered_photo(
+                    session,
+                    order.id,
+                    str(user.id),
+                    product.id,
+                    product.name,
+                    photo.file_id,
+                    photo.caption or ""
+                )
+                # Save the delivered photo to the folder
+                await save_delivered_photo_to_folder(
+                    context.bot,
+                    photo.file_id,
+                    product.name,
+                    order.id,
+                    user.id
+                )
+                fulfilled += 1
+            except Exception as e:
+                print(f"Failed to send photo: {e}")
+
+        # If all units fulfilled, mark order as completed
+        if fulfilled == quantity:
+            await update_order_status(session, order.id, "completed")
+            await query.message.reply_text(f"✅ Order placed and fulfilled for {quantity} units of {product_name}!")
+        else:
+            # Partial fulfillment
+            await update_order_status(session, order.id, "pending")
+            await query.message.reply_text(
+                f"⚠️ Only {fulfilled} out of {quantity} units could be fulfilled for {product_name}.\n"
+                f"Order remains pending for the rest. You will receive the rest as soon as more locations are added."
+            )
+
+    # Notify user (summary)
     await query.message.reply_text(f"✅ Order placed for {quantity} units of {product_name}!")
 
     # Notify admin (replace ADMIN_CHAT_ID with your admin's chat id)
