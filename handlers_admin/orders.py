@@ -1,6 +1,11 @@
-from telegram import Update, InputFile
+from telegram import Update
 from telegram.ext import ContextTypes
-from models import load_json, save_json
+from db import SessionLocal
+from db_utils import (
+    get_order_by_id, get_orders, update_order_status, get_all_deliveries,
+    remove_delivery, get_delivery_by_id
+)
+from db_utils import get_user, set_user_balance, get_product
 
 async def set_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
@@ -8,84 +13,70 @@ async def set_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /setorderstatus <order_id> <status>")
         return
     order_id, new_status = args[0], args[1]
-    orders = load_json("orders.json", {})
-    found = False
-    for user_id, user_orders in orders.items():
-        for order in user_orders:
-            if order.get("order_id") == order_id:
-                if order.get("order_status") == "completed":
-                    await update.message.reply_text("Cannot change status of a completed order.")
-                    return
-                # Refund if cancelling a pending order
-                if order.get("order_status") == "pending" and new_status == "cancelled":
-                    balances = load_json("balances.json", {})
-                    products = load_json("products.json", [])
-                    price = 0
-                    for p in products:
-                        if p["name"] == order["name"]:
-                            price = p["price"]
-                            break
-                    refund = price * order["quantity"]
-                    balances[user_id] = balances.get(user_id, 0) + refund
-                    save_json("balances.json", balances)
-                    await update.message.reply_text(f"User refunded {refund} coins for cancelled order.")
-                # Send location if marking as completed and product has location_image
-                if order.get("order_status") == "pending" and new_status == "completed":
-                    products = load_json("products.json", [])
-                    product = next((p for p in products if p["name"] == order["name"]), None)
-                    if product and product.get("location_image"):
-                        try:
-                            await context.bot.send_photo(
-                                chat_id=user_id,
-                                photo=product["location_image"],
-                                caption=product.get("location_caption", "Here is your pickup location."),
-                                parse_mode="Markdown"
-                            )
-                        except Exception as e:
-                            await update.message.reply_text(f"Could not send location photo to user: {e}")
-                order["order_status"] = new_status
-                found = True
-    if found:
-        save_json("orders.json", orders)
+    async with SessionLocal() as session:
+        order = await get_order_by_id(session, order_id)
+        if not order:
+            await update.message.reply_text("Order not found.")
+            return
+        if order.status == "completed":
+            await update.message.reply_text("Cannot change status of a completed order.")
+            return
+        # Refund if cancelling a pending order
+        if order.status == "pending" and new_status == "cancelled":
+            user = await get_user(session, order.user_id)
+            product = await get_product(session, order.product_id)
+            if product and user:
+                refund = product.price * order.quantity
+                await set_user_balance(session, user.id, user.balance + refund)
+                await update.message.reply_text(f"User refunded {refund} coins for cancelled order.")
+        # Send location if marking as completed and product has location_image
+        if order.status == "pending" and new_status == "completed":
+            product = await get_product(session, order.product_id)
+            if product and product.image:
+                try:
+                    await context.bot.send_photo(
+                        chat_id=order.user_id,
+                        photo=product.image,
+                        caption=product.description or "Here is your pickup location.",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    await update.message.reply_text(f"Could not send location photo to user: {e}")
+        order.status = new_status
+        await session.commit()
         await update.message.reply_text(f"Order {order_id} status updated to {new_status}.")
-    else:
-        await update.message.reply_text("Order not found.")
+
 async def all_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    orders = load_json("orders.json", {})
+    async with SessionLocal() as session:
+        orders = await get_orders(session, limit=30)
     msg = "📦 *All Orders:*\n"
-    count = 0
-    for user_id, user_orders in orders.items():
-        for order in user_orders:
-            msg += (
-                f"- ID: `{order.get('order_id', 'N/A')}` | {order.get('name', '')} x{order.get('quantity', '')} | "
-                f"User: `{user_id}` | Status: *{order.get('order_status', 'pending')}* | {order.get('created_at', '')}\n"
-            )
-            count += 1
-            if count >= 30:
-                break
-        if count >= 30:
-            break
-    if count == 0:
+    if not orders:
         msg += "No orders found."
+    else:
+        for order in orders:
+            msg += (
+                f"- ID: `{order.id}` | {order.product_name} x{order.quantity} | "
+                f"User: `{order.user_id}` | Status: *{order.status}* | {order.created_at}\n"
+            )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def export_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import csv
     from io import StringIO
-    orders = load_json("orders.json", {})
+    async with SessionLocal() as session:
+        orders = await get_orders(session, limit=1000)
     csvfile = StringIO()
     writer = csv.writer(csvfile)
     writer.writerow(['User ID', 'Order ID', 'Product', 'Quantity', 'Status', 'Created At'])
-    for user_id, user_orders in orders.items():
-        for order in user_orders:
-            writer.writerow([
-                user_id,
-                order.get('order_id', ''),
-                order.get('name', ''),
-                order.get('quantity', ''),
-                order.get('order_status', ''),
-                order.get('created_at', '')
-            ])
+    for order in orders:
+        writer.writerow([
+            order.user_id,
+            order.id,
+            order.product_name,
+            order.quantity,
+            order.status,
+            order.created_at
+        ])
     csvfile.seek(0)
     await update.message.reply_document(
         document=csvfile.getvalue().encode(),
@@ -94,13 +85,14 @@ async def export_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def deliveries_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    deliveries = load_json("deliveries.json", [])
+    async with SessionLocal() as session:
+        deliveries = await get_all_deliveries(session)
     if not deliveries:
         await update.message.reply_text("No deliveries found.")
         return
     msg = "🚚 *Deliveries:*\n"
     for d in deliveries:
-        msg += f"- ID: `{d.get('delivery_id', 'N/A')}` | {d.get('info', '')}\n"
+        msg += f"- ID: `{d.id}` | {d.info}\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def removedelivery_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,25 +101,25 @@ async def removedelivery_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Usage: /removedelivery <delivery_id>")
         return
     delivery_id = args[0]
-    deliveries = load_json("deliveries.json", [])
-    new_deliveries = [d for d in deliveries if d.get('delivery_id') != delivery_id]
-    if len(new_deliveries) == len(deliveries):
+    async with SessionLocal() as session:
+        success = await remove_delivery(session, delivery_id)
+    if not success:
         await update.message.reply_text("Delivery not found.")
         return
-    save_json("deliveries.json", new_deliveries)
     await update.message.reply_text(f"Delivery {delivery_id} removed.")
 
 async def export_deliveries(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import csv
     from io import StringIO
-    deliveries = load_json("deliveries.json", [])
+    async with SessionLocal() as session:
+        deliveries = await get_all_deliveries(session)
     csvfile = StringIO()
     writer = csv.writer(csvfile)
     writer.writerow(['Delivery ID', 'Info'])
     for d in deliveries:
         writer.writerow([
-            d.get('delivery_id', ''),
-            d.get('info', '')
+            d.id,
+            getattr(d, "info", "")
         ])
     csvfile.seek(0)
     await update.message.reply_document(
@@ -142,18 +134,17 @@ async def findorder_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /findorder <order_id>")
         return
     order_id = args[0]
-    orders = load_json("orders.json", {})
-    for user_id, user_orders in orders.items():
-        for order in user_orders:
-            if order.get("order_id") == order_id:
-                msg = (
-                    f"Order found:\n"
-                    f"User: `{user_id}`\n"
-                    f"Product: {order.get('name', '')}\n"
-                    f"Quantity: {order.get('quantity', '')}\n"
-                    f"Status: {order.get('order_status', 'pending')}\n"
-                    f"Created: {order.get('created_at', '')}"
-                )
-                await update.message.reply_text(msg, parse_mode="Markdown")
-                return
-    await update.message.reply_text("Order not found.")
+    async with SessionLocal() as session:
+        order = await get_order_by_id(session, order_id)
+    if order:
+        msg = (
+            f"Order found:\n"
+            f"User: `{order.user_id}`\n"
+            f"Product: {order.product_name}\n"
+            f"Quantity: {order.quantity}\n"
+            f"Status: {order.status}\n"
+            f"Created: {order.created_at}"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    else:
+        await update.message.reply_text("Order not found.")

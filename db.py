@@ -37,6 +37,28 @@ class Order(Base):
 
 # Add more models as needed (Deliveries, Profits, etc.)
 
+
+class Profit(Base):
+    __tablename__ = "profits"
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String)
+    product = Column(String)
+    quantity = Column(Integer)
+    amount = Column(Float)
+    stock_id = Column(String)
+    datetime = Column(DateTime)
+
+class Delivery(Base):
+    __tablename__ = "deliveries"
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String)
+    order_id = Column(String)
+    product_name = Column(String)
+    location_image = Column(String)
+    location_caption = Column(String)
+    stock_id = Column(String)
+    delivered_at = Column(DateTime)
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

@@ -1,31 +1,36 @@
 from config import main_menu, DEFAULT_START_COINS
-from models import load_json, save_json
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from .balance import deposit_ltc
 from .products import categories_cmd
+from db import SessionLocal
+from db_utils import get_user, create_user_if_not_exists, get_user_orders_count
+from datetime import datetime
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
-    balances = load_json("balances.json", {})
-    if user_id not in balances:
-        balances[user_id] = DEFAULT_START_COINS
-        save_json("balances.json", balances)
+    async with SessionLocal() as session:
+        user = await get_user(session, user_id)
+        if not user:
+            await create_user_if_not_exists(session, user_id, datetime.utcnow(), DEFAULT_START_COINS)
+            balance = DEFAULT_START_COINS
+            join_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            balance = user.balance
+            join_date = user.join_date.strftime("%Y-%m-%d %H:%M:%S") if user.join_date else "Unknown"
     reply_markup = ReplyKeyboardMarkup(main_menu, resize_keyboard=True)
     await update.message.reply_text(
         f"Welcome to the Shop Bot! 🛒\n\nChoose an option:\n"
-        f"You have {balances[user_id]} coins.",
+        f"You have {balance} coins.",
         reply_markup=reply_markup
     )
-    first_joins = load_json("first_join.json", {})
-    if user_id not in first_joins:
-        from datetime import datetime
-        first_joins[user_id] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        save_json("first_join.json", first_joins)
 
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = str(update.message.from_user.id)
+    async with SessionLocal() as session:
+        user = await get_user(session, user_id)
+        balance = user.balance if user else DEFAULT_START_COINS
     if text == "🛒 View Products":
         await categories_cmd(update, context)
         return
@@ -40,8 +45,6 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await update.message.reply_text("Filter your orders:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif text == "💰 My Balance":
-        balances = load_json("balances.json", {})
-        balance = balances.get(user_id, DEFAULT_START_COINS)
         await update.message.reply_text(f"💰 You have {balance} coins.")
     elif text == "ℹ️ Help":
         await update.message.reply_text(
@@ -55,12 +58,11 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = str(user.id)
-    balances = load_json("balances.json", {})
-    orders = load_json("orders.json", {})
-    joins = load_json("first_join.json", {})
-    balance = balances.get(user_id, DEFAULT_START_COINS)
-    order_count = len(orders.get(user_id, []))
-    join_date = joins.get(user_id, "Unknown")
+    async with SessionLocal() as session:
+        db_user = await get_user(session, user_id)
+        balance = db_user.balance if db_user else DEFAULT_START_COINS
+        order_count = await get_user_orders_count(session, user_id)
+        join_date = db_user.join_date.strftime("%Y-%m-%d %H:%M:%S") if db_user and db_user.join_date else "Unknown"
     msg = (
         f"👤 *Your Profile*\n"
         f"Name: {user.full_name}\n"

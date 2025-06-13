@@ -1,21 +1,20 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
-from models import load_json, save_json
 from config import DEFAULT_START_COINS
+from db import SessionLocal
+from db_utils import get_user, set_user_balance
 
 async def balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    balances = load_json("balances.json", {})
-    balance = balances.get(user_id, DEFAULT_START_COINS)
+    async with SessionLocal() as session:
+        user = await get_user(session, user_id)
+        balance = user.balance if user else DEFAULT_START_COINS
     await update.message.reply_text(f"💰 You have {balance} coins.")
 
 async def deposit_ltc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    deposit_addresses = load_json("deposit_addresses.json", {})
-    if user_id not in deposit_addresses:
-        deposit_addresses[user_id] = "LTC1234567890abcdef"
-        save_json("deposit_addresses.json", deposit_addresses)
-    address = deposit_addresses[user_id]
+    # For demonstration, we'll keep deposit addresses in memory or you can migrate this to DB as well
+    address = "LTC1234567890abcdef"
     keyboard = [
         [InlineKeyboardButton("Check Balance", callback_data=f"check_balance_{user_id}")],
         [InlineKeyboardButton("💸 Simulate Deposit (+100 coins)", callback_data="simulate_deposit")],
@@ -34,15 +33,17 @@ async def simulate_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    balances = load_json("balances.json", {})
-    balances[user_id] = balances.get(user_id, 0) + 100
-    save_json("balances.json", balances)
+    async with SessionLocal() as session:
+        user = await get_user(session, user_id)
+        new_balance = (user.balance if user else 0) + 100
+        await set_user_balance(session, user_id, new_balance)
     await query.message.reply_text("✅ 100 coins have been added to your balance for testing!")
 
 async def check_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    balances = load_json("balances.json", {})
-    balance = balances.get(user_id, DEFAULT_START_COINS)
+    async with SessionLocal() as session:
+        user = await get_user(session, user_id)
+        balance = user.balance if user else DEFAULT_START_COINS
     await query.message.reply_text(f"💰 You have {balance} coins.")

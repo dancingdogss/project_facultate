@@ -1,3 +1,16 @@
+import sys
+import asyncio
+
+if sys.platform.startswith("win") and sys.version_info >= (3, 8):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# If running in Jupyter, VS Code interactive, or similar, allow nested event loops:
+try:
+    import nest_asyncio
+    nest_asyncio.apply()
+except ImportError:
+    pass
+
 from config import TOKEN
 from handlers_user import (
     start, handle_menu, handle_order, receive_quantity, confirm_order, cancel_confirm, cancel_order,
@@ -25,12 +38,10 @@ from handlers_admin.products import (
 from telegram import Update
 from telegram.ext import ContextTypes
 
-import asyncio
 from db import init_db
 
 
-
-def main():
+async def main():
     app = Application.builder().token(TOKEN).build()
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(handle_order, pattern="^order_")],
@@ -92,8 +103,8 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_back_buttons, pattern="^back_to_"))
 
     print("Bot running... Press CTRL+C to stop.")
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(init_db())
-    main()
+    import asyncio
+    asyncio.run(main())
