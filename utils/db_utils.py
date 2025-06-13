@@ -4,8 +4,9 @@ from db import User, Delivery, Product, Order, Profit, LocationPhoto, DeliveredP
 import uuid
 from sqlalchemy import update as sql_update
 from datetime import datetime
+import os
 
- ## User Management
+# --- User Management ---
 async def get_user(session: AsyncSession, user_id: str):
     result = await session.execute(select(User).where(User.id == user_id))
     return result.scalar_one_or_none()
@@ -18,10 +19,7 @@ async def create_user_if_not_exists(session, user_id, join_date, balance):
         await session.commit()
     return user
 
-
-
-# Order Management
-
+# --- Order Management ---
 async def add_order(session, user_id, product_id, product_name, quantity, status, created_at):
     order = Order(
         id=str(uuid.uuid4()),
@@ -41,13 +39,10 @@ async def get_order_by_id(session, order_id):
     return result.scalar_one_or_none()
 
 async def get_orders_by_user(session, user_id):
-    result = await session.execute(select(Order).where(Order.user_id == user_id))
+    result = await session.execute(
+        select(Order).where(Order.user_id == user_id).order_by(Order.created_at.desc())
+    )
     return result.scalars().all()
-
-async def get_order_by_id(session, order_id):
-    result = await session.execute(select(Order).where(Order.id == order_id))
-    return result.scalar_one_or_none()
-
 
 async def get_orders(session, limit=30):
     result = await session.execute(select(Order).order_by(Order.created_at.desc()).limit(limit))
@@ -56,13 +51,6 @@ async def get_orders(session, limit=30):
 async def get_user_orders_count(session, user_id):
     result = await session.execute(select(Order).where(Order.user_id == user_id))
     return len(result.scalars().all())
-
-
-async def get_order_by_id(session, order_id):
-    result = await session.execute(select(Order).where(Order.id == order_id))
-    return result.scalar_one_or_none()
-
-
 
 async def update_order_status(session, order_id, new_status):
     order = await get_order_by_id(session, order_id)
@@ -74,10 +62,7 @@ async def update_order_status(session, order_id, new_status):
     await session.commit()
     return order
 
-
-
-# Delivery Management
-
+# --- Delivery Management ---
 async def get_all_deliveries(session):
     result = await session.execute(select(Delivery))
     return result.scalars().all()
@@ -106,6 +91,7 @@ async def get_available_location_photos(session):
         select(LocationPhoto).where(LocationPhoto.is_delivered == False)
     )
     return result.scalars().all()
+
 async def archive_delivered_photo(session, photo, order_id):
     delivered = DeliveredPhoto(
         id=str(uuid.uuid4()),
@@ -117,24 +103,38 @@ async def archive_delivered_photo(session, photo, order_id):
     session.add(delivered)
     await session.commit()
 
-
-
-
-# Product Management
-
-async def add_product(session, name, price, stock, category):
+# --- Product Management ---
+async def add_product(session, name, price, stock, category, description):
     new_product = Product(
         id=str(uuid.uuid4()),
         name=name,
         price=int(price),
         stock=int(stock),
         category=category,
-        image="",
-        description=""
+        image="",  # Will be set by add_product_photo if needed
+        description=description
     )
     session.add(new_product)
     await session.commit()
     return new_product
+
+async def add_product_photo(session, product_id, file_id_or_name):
+    """
+    file_id_or_name: can be a Telegram file_id or a local filename (e.g., 'cox.png').
+    This implementation assumes you use local files from products_pics.
+    """
+    product = await session.get(Product, product_id)
+    if product:
+        # If file_id_or_name is a filename, store the path
+        if not file_id_or_name.startswith("http") and not file_id_or_name.startswith("AgAC"):
+            # It's a local file, store the path
+            product.image = os.path.join("products_pics", file_id_or_name)
+        else:
+            # It's a Telegram file_id or URL
+            product.image = file_id_or_name
+        await session.commit()
+        return product
+    return None
 
 async def add_location_photo(session, product_id, file_id, caption=""):
     photo = LocationPhoto(
@@ -147,7 +147,6 @@ async def add_location_photo(session, product_id, file_id, caption=""):
     session.add(photo)
     await session.commit()
     return photo
-
 
 async def get_unused_location_photo(session, product_id):
     result = await session.execute(
@@ -174,7 +173,6 @@ async def get_product_by_name(session, name):
     result = await session.execute(select(Product).where(Product.name == name))
     return result.scalar_one_or_none()
 
-
 async def get_products_by_category(session, category):
     result = await session.execute(select(Product).where(Product.category == category))
     return result.scalars().all() 
@@ -182,7 +180,6 @@ async def get_products_by_category(session, category):
 async def get_all_products(session):
     result = await session.execute(select(Product))
     return result.scalars().all()
-
 
 async def search_products(session, text):
     result = await session.execute(select(Product).where(Product.name.ilike(f"%{text}%")))
@@ -206,7 +203,6 @@ async def set_product_stock(session: AsyncSession, product_id: str, stock: int):
     await session.commit()
     return product
 
-
 async def remove_product(session, product_id):
     result = await session.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
@@ -216,30 +212,27 @@ async def remove_product(session, product_id):
         return True
     return False
 
-async def edit_product(session, product_id, field, new_value):
+async def edit_product(session, product_id, field, value):
     result = await session.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
         return False
     if field in ["price", "stock"]:
-        setattr(product, field, int(new_value))
+        setattr(product, field, int(value))
     elif hasattr(product, field):
-        setattr(product, field, new_value)
+        setattr(product, field, value)
     else:
         return False
     await session.commit()
     return True
 
-async def get_all_products(session):
-    result = await session.execute(select(Product))
+async def get_location_photos_by_product(session, product_id):
+    result = await session.execute(
+        select(LocationPhoto).where(LocationPhoto.product_id == product_id)
+    )
     return result.scalars().all()
 
-
-
-
-
-# Profit Management
-
+# --- Profit Management ---
 async def add_profit(session, user_id, product, quantity, amount, stock_id, dt):
     profit = Profit(
         id=str(uuid.uuid4()),
@@ -275,24 +268,20 @@ async def get_all_orders(session):
     return result.scalars().all()
 
 async def set_user_balance(session, user_id, balance):
-    from db_utils import get_user
     user = await get_user(session, user_id)
     if user:
         user.balance = balance
     else:
-        from db import User
         user = User(id=user_id, balance=balance)
         session.add(user)
     await session.commit()
     return user
 
 async def add_user_balance(session, user_id, amount):
-    from db_utils import get_user
     user = await get_user(session, user_id)
     if user:
         user.balance += amount
     else:
-        from db import User
         user = User(id=user_id, balance=amount)
         session.add(user)
     await session.commit()

@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from db import SessionLocal, User
-from db_utils import get_all_users, get_all_orders
+from utils.db_utils import get_all_users, get_all_orders
 from sqlalchemy.future import select
 
 async def search_users(update: Update, context: ContextTypes.DEFAULT_TYPE):

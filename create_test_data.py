@@ -2,7 +2,7 @@ import asyncio
 import uuid
 from datetime import datetime
 from db import SessionLocal
-from db_utils import add_product, set_user_balance
+from utils.db_utils import add_product, set_user_balance
 
 async def add_test_data():
     # Sample products
