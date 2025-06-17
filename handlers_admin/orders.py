@@ -1,3 +1,8 @@
+import random
+import os
+import io
+import csv
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from db import SessionLocal
@@ -5,9 +10,7 @@ from utils.db_utils import (
     get_all_orders, get_order_by_id, get_product_by_id, get_location_photos_by_product,
     get_user
 )
-import random
-import os
-from datetime import datetime
+
 
 
 SET_ORDER_ID, SET_ORDER_STATUS = range(2)
@@ -147,8 +150,23 @@ async def fulfill_order_and_deliver_photos(session, bot, order, user, product, a
 
 # --- Stubs for other admin order commands ---
 
-async def export_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Export orders (stub)")
+
+       
+    ## Export Orders Implementation
+    
+async def export_orders(update, context):
+    async with SessionLocal() as session:
+        orders = await get_all_orders(session)
+    if not orders:
+        await update.message.reply_text("No orders to export.")
+        return
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Order ID", "User ID", "Product", "Quantity", "Status", "Created At"])
+    for o in orders:
+        writer.writerow([o.id, o.user_id, o.product_name, o.quantity, o.status, o.created_at])
+    output.seek(0)
+    await update.message.reply_document(document=io.BytesIO(output.getvalue().encode()), filename="orders.csv")
 
 async def deliveries_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Deliveries (stub)")
