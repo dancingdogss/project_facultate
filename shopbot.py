@@ -26,6 +26,9 @@ from handlers_admin.orders import (
 from handlers_admin.analytics import (
     profits_cmd, export_profits, addcoins_cmd, setcoins_cmd, topusers_cmd, dashboard_cmd
 )
+from handlers_admin.auth import (
+    adminlogin_cmd, admin_password_input, require_admin_auth, log_admin_action
+)
 from handlers_user.menu import start, handle_menu, profile_cmd, deposit_ltc, categories_cmd, handle_back_buttons
 from handlers_user.orders import (
     handle_order, receive_quantity, confirm_order, cancel_order, orderstatus_cmd, myorders_cmd, back_to_orders_filters, simulate_deposit,
@@ -44,19 +47,24 @@ import asyncio
 if sys.platform.startswith("win") and sys.version_info >= (3, 8):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-# --- Combined handler for filter input and menu ---
+# --- Combined handler for filter input, admin login, and menu ---
 async def filter_or_menu(update, context):
-    # Check if we're in the /allorders filter flow
+    # Admin login flow
+    if context.user_data.get("awaiting_admin_password"):
+        await admin_password_input(update, context)
+        return
+
+    # /allorders filter flow
     if context.user_data.get("awaiting_filter_value"):
-        print("filter_value_input logic running")
         filter_type = context.user_data.get("filter_type")
         value = update.message.text.strip()
         await show_orders(update, context, filter_type, value)
         context.user_data.pop("awaiting_filter_value", None)
         context.user_data.pop("filter_type", None)
-    else:
-        print("handle_menu logic running")
-        await handle_menu(update, context)
+        return
+
+    # Main menu and everything else
+    await handle_menu(update, context)
 
 async def main():
     await init_db()
@@ -178,6 +186,9 @@ async def main():
     app.add_handler(CommandHandler("topusers", topusers_cmd))
     app.add_handler(CommandHandler("dashboard", dashboard_cmd))
 
+    # --- Register Admin Auth Command ---
+    app.add_handler(CommandHandler("adminlogin", adminlogin_cmd))
+
     # --- Register User Commands ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("profile", profile_cmd))
@@ -194,7 +205,7 @@ async def main():
 
     # --- Register All Orders Filter Handlers ---
     app.add_handler(CallbackQueryHandler(filter_orders_callback, pattern="^filter_"))
-    # --- Combined handler for both filter input and menu ---
+    # --- Combined handler for admin login, filter input, and menu ---
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, filter_or_menu))
 
     print("Bot running... Press CTRL+C to stop.")
