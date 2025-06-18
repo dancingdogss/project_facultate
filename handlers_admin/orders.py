@@ -3,34 +3,102 @@ import os
 import io
 import csv
 from datetime import datetime
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from db import SessionLocal
 from utils.db_utils import (
     get_all_orders, get_order_by_id, get_product_by_id, get_location_photos_by_product,
     get_user
 )
-
-
+import asyncio
 
 SET_ORDER_ID, SET_ORDER_STATUS = range(2)
 
+# --- ALL ORDERS FILTER INTERFACE ---
+
 async def all_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("By User", callback_data="filter_user")],
+        [InlineKeyboardButton("By Order ID", callback_data="filter_id")],
+        [InlineKeyboardButton("By Product", callback_data="filter_product")],
+        [InlineKeyboardButton("By Date", callback_data="filter_date")],
+        [InlineKeyboardButton("Show All", callback_data="filter_all")]
+    ]
+    await update.message.reply_text(
+        "How would you like to filter orders?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def filter_orders_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    filter_type = query.data.replace("filter_", "")
+    context.user_data["filter_type"] = filter_type
+
+    if filter_type == "all":
+        await show_orders(update, context, filter_type=None, filter_value=None)
+        return
+
+    prompt = {
+        "user": "Enter the User ID:",
+        "id": "Enter the Order ID:",
+        "product": "Enter the Product Name:",
+        "date": "Enter the Date (YYYY-MM-DD):"
+    }
+    await query.message.reply_text(prompt[filter_type])
+    context.user_data["awaiting_filter_value"] = True
+
+
+
+async def filter_value_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("filter_value_input called. Awaiting:", context.user_data.get("awaiting_filter_value"))  # Debug print
+    # Only process if we're in the filter flow
+    if not context.user_data.get("awaiting_filter_value"):
+        return  # Let other handlers process this message!
+
+    filter_type = context.user_data.get("filter_type")
+    value = update.message.text.strip()
+    await show_orders(update, context, filter_type, value)
+
+    # Clean up filter state
+    context.user_data.pop("awaiting_filter_value", None)
+    context.user_data.pop("filter_type", None)
+
+async def show_orders(update, context, filter_type=None, filter_value=None):
     async with SessionLocal() as session:
         orders = await get_all_orders(session)
-    if not orders:
-        await update.message.reply_text("No orders found.")
+        if filter_type == "user":
+            filtered = [o for o in orders if str(o.user_id) == str(filter_value)]
+        elif filter_type == "id":
+            filtered = [o for o in orders if str(o.id) == filter_value]
+        elif filter_type == "product":
+            filtered = [o for o in orders if filter_value.lower() in o.product_name.lower()]
+        elif filter_type == "date":
+            filtered = [o for o in orders if str(o.created_at).startswith(filter_value)]
+        else:
+            filtered = orders
+
+    if not filtered:
+        await update.message.reply_text("No orders found for this filter.")
         return
-    for order in orders:
-        msg = (
-            f"🛒 *Order ID:* {order.id}\n"
-            f"👤 User ID: {order.user_id}\n"
-            f"📦 Product: {order.product_name}\n"
-            f"🔢 Quantity: {order.quantity}\n"
-            f"📅 Date: {order.created_at}\n"
-            f"🚦 Status: {order.status}"
-        )
-        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    # Group by status for clarity
+    grouped = {}
+    for order in filtered:
+        grouped.setdefault(order.status.capitalize(), []).append(order)
+
+    msg = ""
+    for status, group in grouped.items():
+        msg += f"\n<b>{status} Orders ({len(group)}):</b>\n"
+        msg += "<pre>OrderID                             UserID   Product         Qty   Date\n"
+        msg += "---------------------------------  -------  --------------  ----  ----------\n"
+        for o in group:
+            msg += f"{str(o.id):<34} {str(o.user_id):<8} {o.product_name[:14]:<15} {str(o.quantity):<6} {str(o.created_at)[:10]}\n"
+        msg += "</pre>\n"
+        for o in group:
+            msg += f"Full Order ID: <code>{o.id}</code>\n"
+
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 # --- Set Order Status Implementation ---
 
@@ -91,10 +159,17 @@ async def set_order_status_status(update: Update, context: ContextTypes.DEFAULT_
             await context.bot.send_message(chat_id=user.id, text=f"Your order {order_id} was canceled. You have been refunded {refund_amount} coins.")
             await update.message.reply_text("Order canceled and user refunded.")
 
+        # Notify the user of the status change
+        await context.bot.send_message(
+            chat_id=order.user_id,
+            text=f"Your order {order.id} status has changed to: {order.status}."
+        )
+
     return ConversationHandler.END
 
+# --- Fulfill Order and Deliver Photos ---
+
 async def fulfill_order_and_deliver_photos(session, bot, order, user, product, admin_chat_id=None):
-    import random
     from utils.db_utils import get_location_photos_by_product
 
     quantity = getattr(order, "quantity", 1)
@@ -148,12 +223,8 @@ async def fulfill_order_and_deliver_photos(session, bot, order, user, product, a
         if admin_chat_id:
             await bot.send_message(chat_id=admin_chat_id, text=f"Order {order.id} for user {user.id} is pending (not enough location photos).")
 
-# --- Stubs for other admin order commands ---
+# --- Export Orders Implementation ---
 
-
-       
-    ## Export Orders Implementation
-    
 async def export_orders(update, context):
     async with SessionLocal() as session:
         orders = await get_all_orders(session)
@@ -168,11 +239,57 @@ async def export_orders(update, context):
     output.seek(0)
     await update.message.reply_document(document=io.BytesIO(output.getvalue().encode()), filename="orders.csv")
 
+# --- Stubs for other admin order commands ---
+
 async def deliveries_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Deliveries (stub)")
 
 async def findorder_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Find order (stub)")
+    args = update.message.text.split()
+    if len(args) < 3:
+        await update.message.reply_text(
+            "Usage:\n"
+            "/findorder user <user_id>\n"
+            "/findorder product <product_name>\n"
+            "/findorder status <status>\n"
+            "/findorder date <YYYY-MM-DD>"
+        )
+        return
+
+    filter_type = args[1].lower()
+    filter_value = " ".join(args[2:])
+
+    async with SessionLocal() as session:
+        if filter_type == "user":
+            orders = await get_all_orders(session)
+            filtered = [o for o in orders if str(o.user_id) == filter_value]
+        elif filter_type == "product":
+            orders = await get_all_orders(session)
+            filtered = [o for o in orders if filter_value.lower() in o.product_name.lower()]
+        elif filter_type == "status":
+            orders = await get_all_orders(session)
+            filtered = [o for o in orders if o.status.lower() == filter_value.lower()]
+        elif filter_type == "date":
+            orders = await get_all_orders(session)
+            filtered = [o for o in orders if str(o.created_at).startswith(filter_value)]
+        else:
+            await update.message.reply_text("Unknown filter type.")
+            return
+
+    if not filtered:
+        await update.message.reply_text("No orders found for this filter.")
+        return
+
+    for order in filtered:
+        msg = (
+            f"🛒 *Order ID:* {order.id}\n"
+            f"👤 User ID: {order.user_id}\n"
+            f"📦 Product: {order.product_name}\n"
+            f"🔢 Quantity: {order.quantity}\n"
+            f"📅 Date: {order.created_at}\n"
+            f"🚦 Status: {order.status}"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def export_deliveries(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Export deliveries (stub)")

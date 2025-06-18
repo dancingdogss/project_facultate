@@ -229,3 +229,17 @@ async def send_location_photos(update: Update, context: ContextTypes.DEFAULT_TYP
     media = [InputMediaPhoto(photo.file_id, caption=photo.caption or None) for photo in photos]
     await update.message.reply_media_group(media)
     return ConversationHandler.END
+
+# --- Low Stock Command ---
+async def lowstock_cmd(update, context):
+    LOW_STOCK_THRESHOLD = 5
+    async with SessionLocal() as session:
+        products = await get_all_products(session)
+    low_stock = [p for p in products if p.stock < LOW_STOCK_THRESHOLD]
+    if not low_stock:
+        await update.message.reply_text("All products are sufficiently stocked.")
+        return
+    msg = "⚠️ Low Stock Products:\n"
+    for p in low_stock:
+        msg += f"- {p.name}: {p.stock} left\n"
+    await update.message.reply_text(msg)

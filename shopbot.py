@@ -11,7 +11,7 @@ from handlers_admin.products import (
     edit_product_cmd, edit_product_id, edit_product_field, edit_product_value,
     add_product_photo_cmd, receive_product_photo, save_product_photo,
     add_location_photo_cmd, receive_location_photo_bulk, save_location_photo_bulk, done_adding_location_photos,
-    show_location_photos_cmd, send_location_photos,
+    show_location_photos_cmd, send_location_photos, lowstock_cmd,
     ADD_NAME, ADD_PRICE, ADD_STOCK, ADD_CATEGORY, ADD_DESCRIPTION,
     EDIT_FIELD, EDIT_ID, EDIT_VALUE, REMOVE_ID,
     PHOTO_PRODUCT_ID, PHOTO_RECEIVE,
@@ -19,7 +19,7 @@ from handlers_admin.products import (
     SHOW_LOCATION_PHOTOS,
 )
 from handlers_admin.orders import (
-    all_orders, export_orders, deliveries_cmd, findorder_cmd, export_deliveries, removedelivery_cmd,
+    all_orders, export_orders, filter_orders_callback, show_orders, deliveries_cmd, findorder_cmd, export_deliveries, removedelivery_cmd,
     set_order_status_cmd, set_order_status_id, set_order_status_status,
     SET_ORDER_ID, SET_ORDER_STATUS,
 )
@@ -28,8 +28,7 @@ from handlers_admin.analytics import (
 )
 from handlers_user.menu import start, handle_menu, profile_cmd, deposit_ltc, categories_cmd, handle_back_buttons
 from handlers_user.orders import (
-    handle_order, receive_quantity, confirm_order, cancel_order,
-    myorders_cmd, filter_orders_callback, back_to_orders_filters, simulate_deposit,
+    handle_order, receive_quantity, confirm_order, cancel_order, orderstatus_cmd, myorders_cmd, back_to_orders_filters, simulate_deposit,
     ORDER_QUANTITY, ORDER_CONFIRM
 )
 from handlers_user.products import (
@@ -44,6 +43,20 @@ import asyncio
 
 if sys.platform.startswith("win") and sys.version_info >= (3, 8):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# --- Combined handler for filter input and menu ---
+async def filter_or_menu(update, context):
+    # Check if we're in the /allorders filter flow
+    if context.user_data.get("awaiting_filter_value"):
+        print("filter_value_input logic running")
+        filter_type = context.user_data.get("filter_type")
+        value = update.message.text.strip()
+        await show_orders(update, context, filter_type, value)
+        context.user_data.pop("awaiting_filter_value", None)
+        context.user_data.pop("filter_type", None)
+    else:
+        print("handle_menu logic running")
+        await handle_menu(update, context)
 
 async def main():
     await init_db()
@@ -155,6 +168,7 @@ async def main():
     app.add_handler(CommandHandler("findorder", findorder_cmd))
     app.add_handler(CommandHandler("exportdeliveries", export_deliveries))
     app.add_handler(CommandHandler("removedelivery", removedelivery_cmd))
+    app.add_handler(CommandHandler("lowstock", lowstock_cmd))
 
     # --- Register Admin Analytics Commands ---
     app.add_handler(CommandHandler("profits", profits_cmd))
@@ -168,15 +182,20 @@ async def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("profile", profile_cmd))
     app.add_handler(CommandHandler("myorders", myorders_cmd))
+    app.add_handler(CommandHandler("orderstatus", orderstatus_cmd))
     app.add_handler(CommandHandler("categories", categories_cmd))
     app.add_handler(CommandHandler("search", search_cmd))
     app.add_handler(CommandHandler("deposit_ltc", deposit_ltc))
 
     # --- Register Menu and Product Navigation ---
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu))
     app.add_handler(CallbackQueryHandler(product_details_callback, pattern="^details_"))
     app.add_handler(CallbackQueryHandler(back_to_categories_callback, pattern="^back_to_categories$"))
     app.add_handler(CallbackQueryHandler(back_to_menu_callback, pattern="^back_to_menu$"))
+
+    # --- Register All Orders Filter Handlers ---
+    app.add_handler(CallbackQueryHandler(filter_orders_callback, pattern="^filter_"))
+    # --- Combined handler for both filter input and menu ---
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, filter_or_menu))
 
     print("Bot running... Press CTRL+C to stop.")
     await app.run_polling()

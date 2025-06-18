@@ -5,9 +5,9 @@ from utils.db_utils import add_order, get_product_by_name, get_product_by_id, ge
 from datetime import datetime
 from handlers_admin.orders import fulfill_order_and_deliver_photos
 
-
-
 ORDER_QUANTITY, ORDER_CONFIRM = range(2)
+ADMIN_IDS = [5501799605]  # <-- Replace with your actual admin Telegram user IDs
+LOW_STOCK_THRESHOLD = 5   # You can adjust this threshold as needed
 
 async def handle_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -58,6 +58,21 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Deduct balance
         user_obj.balance -= total_price
 
+        # Reduce product stock
+        product.stock -= quantity
+        await session.commit()
+
+        # --- Stock alert logic ---
+        if product.stock < LOW_STOCK_THRESHOLD:
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=f"⚠️ Low stock alert!\nProduct: {product.name}\nStock left: {product.stock}"
+                    )
+                except Exception as e:
+                    print(f"Failed to notify admin {admin_id} about low stock: {e}")
+
         # Save order to DB
         order = await add_order(
             session=session,
@@ -74,7 +89,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         order = await get_order_by_id(session, order.id)
 
         # Fulfill order and deliver photos if possible
-        ADMIN_CHAT_ID = 5501799605  # <-- set your admin Telegram user/chat ID here
+        ADMIN_CHAT_ID = ADMIN_IDS[0]  # Use the first admin for fulfillment notifications
         await fulfill_order_and_deliver_photos(session, context.bot, order, user_obj, product, admin_chat_id=ADMIN_CHAT_ID)
 
     # Notify user (fulfillment function also sends messages, but this is a fallback)
@@ -108,6 +123,25 @@ async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("order_quantity", None)
     return ConversationHandler.END
 
+async def orderstatus_cmd(update, context):
+    args = update.message.text.split()
+    if len(args) != 2:
+        await update.message.reply_text("Usage: /orderstatus <order_id>")
+        return
+    order_id = args[1]
+    user_id = str(update.effective_user.id)
+    async with SessionLocal() as session:
+        order = await get_order_by_id(session, order_id)
+    if not order or str(order.user_id) != user_id:
+        await update.message.reply_text("Order not found.")
+        return
+    await update.message.reply_text(
+        f"Order {order.id} status: {order.status}\n"
+        f"Product: {order.product_name}\n"
+        f"Quantity: {order.quantity}\n"
+        f"Date: {order.created_at}"
+    )
+
 # --- User's Order History ---
 async def myorders_cmd(update, context):
     user_id = str(update.effective_user.id)
@@ -128,8 +162,6 @@ async def myorders_cmd(update, context):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # --- Stubs for compatibility ---
-async def filter_orders_callback(update, context):
-    await update.callback_query.answer("Filter orders (stub)")
 
 async def back_to_orders_filters(update, context):
     await update.callback_query.answer("Back to orders filters (stub)")

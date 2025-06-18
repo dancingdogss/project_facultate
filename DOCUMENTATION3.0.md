@@ -2,7 +2,7 @@
 
 ---
 
-## ✅ Fixed & Working Commands (2024-06-18)
+## ✅ Fixed & Working Commands (2025-06-18)
 
 - **/removeproduct** — Remove a product by its ID (UUID).  
 - **/editproduct** — Edit a product by its ID (UUID).  
@@ -17,6 +17,11 @@
 - **/dashboard** — Show sales stats, top products, and low-stock alerts.  
 - **/profits** — Show recent profits.  
 - **/exportprofits** — Export profits as CSV.  
+- **/allorders** — Interactive admin interface to filter orders by User, Order ID, Product, or Date, with grouped and copy-friendly output.  
+- **Product Stock Alerts** — Admins are notified when product stock drops below a threshold.  
+- **Order Status Notifications** — Users are notified automatically when their order status changes.  
+- **Order Filtering & Search** — Admins can filter orders by user, product, date, or status; users can search their own order history.  
+- **Main Menu Buttons** — All main menu buttons and flows work seamlessly with the new order filtering logic.
 
 All of the above have been tested and are working as intended.
 
@@ -41,7 +46,8 @@ All of the above have been tested and are working as intended.
 | **/profile** | `/profile` | Show your profile: join date, order count, and balance. |
 | **/balance** | `/balance` | Show your current coin balance. |
 | **/deposit_ltc** | `/deposit_ltc` | Get a Litecoin deposit address (demo/testing). |
-| **/myorders** | `/myorders` | Show your order history. |
+| **/myorders** | `/myorders` | Show your order history. Supports keyword filtering. |
+| **/orderstatus** | `/orderstatus <order_id>` | Show the status of a specific order. |
 
 ---
 
@@ -58,7 +64,7 @@ All of the above have been tested and are working as intended.
 | **/addlocationphoto** | `/addlocationphoto <product_id>` | Bulk upload location (delivery) photos for a product.<br>_Send multiple photos, then `/done`._ |
 | **/done** | `/done` | Finish a bulk photo upload session. |
 | **/showlocationphotos** | `/showlocationphotos <product_id>` | Show all available (not yet delivered) location photos for a product. |
-| **/allorders** | `/allorders` | Show all orders for all users, grouped by status. |
+| **/allorders** | `/allorders` | Interactive filter: view orders by User, Order ID, Product, or Date. Results are grouped and copy-friendly. |
 | **/exportorders** | `/exportorders` | Export all orders as a CSV file. |
 | **/setorderstatus** | `/setorderstatus <order_id> <status>` | Change the status of an order (`completed`, `cancelled`, etc.).<br>_Example:_ `/setorderstatus <id> completed` |
 | **/deliveries** | `/deliveries` | Show completed deliveries. |
@@ -80,6 +86,9 @@ All of the above have been tested and are working as intended.
 - All data is persistent in SQLite.
 - The bot uses async handlers and the latest python-telegram-bot API.
 - Inline buttons are used for navigation and order flow.
+- **Order filtering and main menu now work seamlessly together.**
+- **Admins receive automatic low stock alerts.**
+- **Users are notified of order status changes.**
 
 ---
 
