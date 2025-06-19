@@ -1,24 +1,28 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from db import SessionLocal
-from utils.db_utils import get_user
+from db import SessionLocal, User
+from utils.db_utils import get_user, create_user_if_not_exists
 from sqlalchemy import text
+from handlers_admin.auth import require_admin_auth, log_admin_action
+from config import DEFAULT_START_COINS
+from datetime import datetime
 
-
-# This command calculates total profits from completed orders and sends it to the chat
+# --- Profits Command ---
 async def profits_cmd(update, context):
+    if not await require_admin_auth(update, context):
+        return
     async with SessionLocal() as session:
         result = await session.execute(
             text("SELECT SUM(o.quantity * p.price) FROM orders o JOIN products p ON o.product_id = p.id WHERE o.status = 'completed'")
         )
         total = result.scalar()
     await update.message.reply_text(f"💰 Total profits from completed orders: {total or 0} coins")
+    log_admin_action(update.effective_user.id, update.message.text)
 
-
-
-# This command exports profits from completed orders to a CSV file and sends it to the chat 
-
+# --- Export Profits Command ---
 async def export_profits(update, context):
+    if not await require_admin_auth(update, context):
+        return
     async with SessionLocal() as session:
         result = await session.execute(
             text(
@@ -39,11 +43,12 @@ async def export_profits(update, context):
         writer.writerow([r.id, r.user_id, r.product_name, r.quantity, r.price, r.status, r.created_at, profit])
     output.seek(0)
     await update.message.reply_document(document=io.BytesIO(output.getvalue().encode()), filename="profits.csv")
+    log_admin_action(update.effective_user.id, update.message.text)
 
-    #
-# This command adds coins to a user's balance. It expects a user ID and an amount.
-
+# --- Add Coins Command ---
 async def addcoins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_admin_auth(update, context):
+        return
     args = update.message.text.split()
     if len(args) != 3:
         await update.message.reply_text("Usage: /addcoins <user_id> <amount>")
@@ -56,17 +61,18 @@ async def addcoins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with SessionLocal() as session:
         user = await get_user(session, user_id)
         if not user:
-            await update.message.reply_text("User not found.")
-            return
+            # Auto-create user if not found
+            await create_user_if_not_exists(session, user_id, datetime.utcnow(), DEFAULT_START_COINS)
+            user = await get_user(session, user_id)
         user.balance += amount
         await session.commit()
         await update.message.reply_text(f"Added {amount} coins to user {user_id}. New balance: {user.balance}")
+    log_admin_action(update.effective_user.id, update.message.text)
 
-
-# This command sets a user's balance to a specific amount. It expects a user ID and an amount.
-
-
+# --- Set Coins Command ---
 async def setcoins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await require_admin_auth(update, context):
+        return
     args = update.message.text.split()
     if len(args) != 3:
         await update.message.reply_text("Usage: /setcoins <user_id> <amount>")
@@ -79,15 +85,34 @@ async def setcoins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with SessionLocal() as session:
         user = await get_user(session, user_id)
         if not user:
-            await update.message.reply_text("User not found.")
-            return
+            # Auto-create user if not found
+            await create_user_if_not_exists(session, user_id, datetime.utcnow(), DEFAULT_START_COINS)
+            user = await get_user(session, user_id)
         user.balance = amount
         await session.commit()
         await update.message.reply_text(f"Set user {user_id} balance to {amount}.")
+    log_admin_action(update.effective_user.id, update.message.text)
 
-# This command retrieves the top 10 users by balance and sends them to the chat
+# --- Top Users Command ---
+
+async def users_cmd(update, context):
+    if not await require_admin_auth(update, context):
+        return
+    async with SessionLocal() as session:
+        result = await session.execute(User.__table__.select())
+        users = result.fetchall()
+    if not users:
+        await update.message.reply_text("No users found.")
+        return
+    msg = "👥 All Users:\n"
+    for u in users:
+        msg += f"- ID: {u.id} | Joined: {u.join_date.strftime('%Y-%m-%d %H:%M:%S') if u.join_date else 'N/A'} | Balance: {u.balance}\n"
+    await update.message.reply_text(msg)
+    log_admin_action(update.effective_user.id, update.message.text)
 
 async def topusers_cmd(update, context):
+    if not await require_admin_auth(update, context):
+        return
     async with SessionLocal() as session:
         from db import User
         result = await session.execute(
@@ -101,12 +126,12 @@ async def topusers_cmd(update, context):
     for i, u in enumerate(users, 1):
         msg += f"{i}. User ID: {u.id} | Balance: {u.balance}\n"
     await update.message.reply_text(msg)
+    log_admin_action(update.effective_user.id, update.message.text)
 
-
-# This command provides a dashboard with top products and low stock items
-
-
+# --- Dashboard Command ---
 async def dashboard_cmd(update, context):
+    if not await require_admin_auth(update, context):
+        return
     async with SessionLocal() as session:
         # Top products by sales
         result = await session.execute(
@@ -127,3 +152,4 @@ async def dashboard_cmd(update, context):
     for p in low_stock:
         msg += f"- {p.name}: {p.stock} left\n"
     await update.message.reply_text(msg)
+    log_admin_action(update.effective_user.id, update.message.text)

@@ -10,6 +10,7 @@ from db import SessionLocal
 import os
 
 WELCOME_PHOTO_PATH = os.path.join("products_pics", "winners_shop.png")
+ADMIN_IDS = [5501799605]  # Replace with your actual admin Telegram user IDs
 
 def get_main_menu_keyboard():
     keyboard = [
@@ -22,13 +23,26 @@ def get_main_menu_keyboard():
 
 async def start(update, context):
     user_id = str(update.message.from_user.id)
+    is_new = False
     async with SessionLocal() as session:
         user = await get_user(session, user_id)
         if not user:
             await create_user_if_not_exists(session, user_id, datetime.utcnow(), DEFAULT_START_COINS)
+            is_new = True
             balance = DEFAULT_START_COINS
         else:
             balance = user.balance
+
+    # Notify admins if a new user joined
+    if is_new:
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"👤 New user joined!\nID: {user_id}\nName: {update.effective_user.full_name}\nUsername: @{update.effective_user.username or 'N/A'}"
+                )
+            except Exception as e:
+                print(f"Failed to notify admin {admin_id}: {e}")
 
     if os.path.exists(WELCOME_PHOTO_PATH):
         with open(WELCOME_PHOTO_PATH, "rb") as photo:
@@ -129,4 +143,4 @@ async def handle_back_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
     elif query.data == "back_to_menu":
         await query.message.reply_text("Main Menu:", reply_markup=get_main_menu_keyboard())
-        return ConversationHandler.END
+        return

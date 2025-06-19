@@ -1,6 +1,6 @@
 import logging
 from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
+from telegram.ext import ContextTypes
 
 # --- Admin password (change as needed) ---
 ADMIN_PASSWORD = "Prajituri420!"
@@ -24,7 +24,7 @@ async def adminlogin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_password_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_admin_password"):
-        return  # Let other handlers process
+        return
     if update.message.text == ADMIN_PASSWORD:
         context.user_data["is_admin_authenticated"] = True
         context.user_data.pop("awaiting_admin_password", None)
@@ -40,10 +40,3 @@ async def require_admin_auth(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("🔒 Please use /adminlogin to authenticate before using admin commands.")
         return False
     return True
-
-# --- Handler registration helper (for shopbot.py) ---
-def get_admin_auth_handlers():
-    return [
-        CommandHandler("adminlogin", adminlogin_cmd),
-        MessageHandler(filters.TEXT & ~filters.COMMAND, admin_password_input),
-    ]

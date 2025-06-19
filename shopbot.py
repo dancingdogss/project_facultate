@@ -24,7 +24,7 @@ from handlers_admin.orders import (
     SET_ORDER_ID, SET_ORDER_STATUS,
 )
 from handlers_admin.analytics import (
-    profits_cmd, export_profits, addcoins_cmd, setcoins_cmd, topusers_cmd, dashboard_cmd
+    profits_cmd, export_profits, addcoins_cmd, setcoins_cmd, topusers_cmd, dashboard_cmd, users_cmd
 )
 from handlers_admin.auth import (
     adminlogin_cmd, admin_password_input, require_admin_auth, log_admin_action
@@ -185,6 +185,7 @@ async def main():
     app.add_handler(CommandHandler("setcoins", setcoins_cmd))
     app.add_handler(CommandHandler("topusers", topusers_cmd))
     app.add_handler(CommandHandler("dashboard", dashboard_cmd))
+    app.add_handler(CommandHandler("users", users_cmd))
 
     # --- Register Admin Auth Command ---
     app.add_handler(CommandHandler("adminlogin", adminlogin_cmd))
