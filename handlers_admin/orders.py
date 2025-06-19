@@ -10,7 +10,6 @@ from utils.db_utils import (
     get_all_orders, get_order_by_id, get_product_by_id, get_location_photos_by_product,
     get_user
 )
-import asyncio
 
 SET_ORDER_ID, SET_ORDER_STATUS = range(2)
 
@@ -48,19 +47,12 @@ async def filter_orders_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.message.reply_text(prompt[filter_type])
     context.user_data["awaiting_filter_value"] = True
 
-
-
 async def filter_value_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("filter_value_input called. Awaiting:", context.user_data.get("awaiting_filter_value"))  # Debug print
-    # Only process if we're in the filter flow
     if not context.user_data.get("awaiting_filter_value"):
-        return  # Let other handlers process this message!
-
+        return
     filter_type = context.user_data.get("filter_type")
     value = update.message.text.strip()
     await show_orders(update, context, filter_type, value)
-
-    # Clean up filter state
     context.user_data.pop("awaiting_filter_value", None)
     context.user_data.pop("filter_type", None)
 
@@ -82,7 +74,6 @@ async def show_orders(update, context, filter_type=None, filter_value=None):
         await update.message.reply_text("No orders found for this filter.")
         return
 
-    # Group by status for clarity
     grouped = {}
     for order in filtered:
         grouped.setdefault(order.status.capitalize(), []).append(order)
@@ -137,19 +128,35 @@ async def set_order_status_status(update: Update, context: ContextTypes.DEFAULT_
 
         if status == "completed":
             photos = await get_location_photos_by_product(session, product.id)
-            if len(photos) < to_deliver:
-                await update.message.reply_text(
-                    f"Not enough location photos to complete the order. Needed: {to_deliver}, available: {len(photos)}."
-                )
+            available_photos = len(photos)
+            if to_deliver <= 0:
+                await update.message.reply_text("Order already fully delivered.")
                 return ConversationHandler.END
-            selected_photos = random.sample(photos, to_deliver)
+            if available_photos == 0:
+                await update.message.reply_text("No location photos available to deliver.")
+                return ConversationHandler.END
+
+            deliver_now = min(to_deliver, available_photos)
+            selected_photos = photos[:deliver_now]
+            last_photo_id = None
             for photo in selected_photos:
                 await context.bot.send_photo(chat_id=user.id, photo=photo.file_id, caption=photo.caption or "")
+                last_photo_id = photo.id  # Save the last delivered photo's DB id
                 await session.delete(photo)
-            order.status = "completed"
-            order.delivered_count = quantity
+            order.delivered_count = delivered_count + deliver_now
+            if last_photo_id:
+                order.location_photo_id = last_photo_id  # Track the last delivered photo for this order
+
+            if order.delivered_count >= quantity:
+                order.status = "completed"
+                await update.message.reply_text(f"Order completed. {deliver_now} photo(s) delivered.")
+            else:
+                order.status = "pending"
+                still_pending = quantity - order.delivered_count
+                await update.message.reply_text(
+                    f"Only {deliver_now} photo(s) delivered. {still_pending} still pending."
+                )
             await session.commit()
-            await update.message.reply_text("Order marked as completed and photos delivered.")
         elif status == "canceled":
             refund_units = quantity - delivered_count
             refund_amount = refund_units * product.price
@@ -159,7 +166,6 @@ async def set_order_status_status(update: Update, context: ContextTypes.DEFAULT_
             await context.bot.send_message(chat_id=user.id, text=f"Your order {order_id} was canceled. You have been refunded {refund_amount} coins.")
             await update.message.reply_text("Order canceled and user refunded.")
 
-        # Notify the user of the status change
         await context.bot.send_message(
             chat_id=order.user_id,
             text=f"Your order {order.id} status has changed to: {order.status}."
@@ -178,6 +184,7 @@ async def fulfill_order_and_deliver_photos(session, bot, order, user, product, a
 
     photos = await get_location_photos_by_product(session, product.id)
     delivered_now = 0
+    last_photo_id = None
 
     delivered_folder = os.path.join(os.getcwd(), "delivered_photos")
     os.makedirs(delivered_folder, exist_ok=True)
@@ -185,19 +192,19 @@ async def fulfill_order_and_deliver_photos(session, bot, order, user, product, a
     if len(photos) >= to_deliver:
         selected_photos = random.sample(photos, to_deliver)
         for photo in selected_photos:
-            # Send photo to user
             await bot.send_photo(chat_id=user.id, photo=photo.file_id, caption=photo.caption or "")
-            # Download photo from Telegram and save to delivered_photos
             file = await bot.get_file(photo.file_id)
             dt_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"{product.name}_{user.id}_{order.id}_{dt_str}.jpg"
             filepath = os.path.join(delivered_folder, filename)
             await file.download_to_drive(filepath)
-            # Remove photo from product (delete from DB)
+            last_photo_id = photo.id
             await session.delete(photo)
             delivered_now += 1
         order.status = "completed"
         order.delivered_count = quantity
+        if last_photo_id:
+            order.location_photo_id = last_photo_id
         await session.commit()
         await bot.send_message(chat_id=user.id, text="Your order is completed and all location photos have been sent!")
         if admin_chat_id:
@@ -212,13 +219,17 @@ async def fulfill_order_and_deliver_photos(session, bot, order, user, product, a
                 filename = f"{product.name}_{user.id}_{order.id}_{dt_str}.jpg"
                 filepath = os.path.join(delivered_folder, filename)
                 await file.download_to_drive(filepath)
+                last_photo_id = photo.id
                 await session.delete(photo)
                 delivered_now += 1
+            order.delivered_count = delivered_count + delivered_now
+            order.status = "pending"
+            if last_photo_id:
+                order.location_photo_id = last_photo_id
             await bot.send_message(chat_id=user.id, text=f"{delivered_now} location photo(s) sent. The rest will be delivered when available.")
         else:
             await bot.send_message(chat_id=user.id, text="No location photos available yet. Your order is pending.")
-        order.status = "pending"
-        order.delivered_count = delivered_now
+            order.status = "pending"
         await session.commit()
         if admin_chat_id:
             await bot.send_message(chat_id=admin_chat_id, text=f"Order {order.id} for user {user.id} is pending (not enough location photos).")

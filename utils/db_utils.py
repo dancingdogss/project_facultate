@@ -1,8 +1,7 @@
-from sqlalchemy.future import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from db import User, Delivery, Product, Order, Profit, LocationPhoto, DeliveredPhoto
 import uuid
-from sqlalchemy import update as sql_update
 from datetime import datetime
 import os
 
@@ -112,7 +111,8 @@ async def add_product(session, name, price, stock, category, description):
         stock=int(stock),
         category=category,
         image="",  # Will be set by add_product_photo if needed
-        description=description
+        description=description,
+        location_img_count=0
     )
     session.add(new_product)
     await session.commit()
@@ -136,9 +136,9 @@ async def add_product_photo(session, product_id, file_id_or_name):
         return product
     return None
 
+# --- Location Photo Management ---
+
 async def add_location_photo(session, product_id, file_id, caption=""):
-    from db import LocationPhoto
-    import uuid
     photo = LocationPhoto(
         id=str(uuid.uuid4()),
         product_id=product_id,
@@ -147,7 +147,30 @@ async def add_location_photo(session, product_id, file_id, caption=""):
         is_delivered=False
     )
     session.add(photo)
+    # Update the count after adding
+    count = await session.scalar(
+        select(func.count()).select_from(LocationPhoto).where(LocationPhoto.product_id == product_id)
+    )
+    product = await session.get(Product, product_id)
+    if product:
+        product.location_img_count = count
     await session.commit()
+
+async def remove_location_photo(session, photo_id):
+    photo = await session.get(LocationPhoto, photo_id)
+    if photo:
+        product_id = photo.product_id
+        await session.delete(photo)
+        # Update the count after removing
+        count = await session.scalar(
+            select(func.count()).select_from(LocationPhoto).where(LocationPhoto.product_id == product_id)
+        )
+        product = await session.get(Product, product_id)
+        if product:
+            product.location_img_count = count
+        await session.commit()
+        return True
+    return False
 
 async def get_unused_location_photo(session, product_id):
     result = await session.execute(
@@ -166,9 +189,13 @@ async def mark_location_photo_delivered(session, photo_id, order_id):
         photo.order_id = order_id
         await session.commit()
 
+async def count_location_photos(session, product_id):
+    count = await session.scalar(
+        select(func.count()).select_from(LocationPhoto).where(LocationPhoto.product_id == product_id)
+    )
+    return count
 
-# --- Product Management ---
-
+# --- Product Management (continued) ---
 
 async def get_product(session: AsyncSession, product_id: str):
     result = await session.execute(select(Product).where(Product.id == product_id))
@@ -183,7 +210,6 @@ async def get_products_by_category(session, category):
     return result.scalars().all() 
 
 async def get_product_by_id(session, product_id):
-    from db import Product  # Adjust import if needed
     return await session.get(Product, product_id)
 
 async def get_all_products(session):
@@ -236,7 +262,6 @@ async def edit_product(session, product_id, field, value):
     return True
 
 async def get_location_photos_by_product(session, product_id):
-    from db import LocationPhoto
     result = await session.execute(
         select(LocationPhoto).where(LocationPhoto.product_id == product_id)
     )

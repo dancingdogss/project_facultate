@@ -15,24 +15,32 @@ LOCATION_PRODUCT_ID, LOCATION_RECEIVE = 11, 12
 SHOW_LOCATION_PHOTOS = 14
 
 # --- Product List ---
-async def product_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with SessionLocal() as session:
-        products = await get_all_products(session)
-    if not products:
-        await update.message.reply_text("No products found.")
-        return
-    msg = ""
-    for product in products:
-        msg += (
-            f"*ID: {product.id}*\n"
-            f"*{product.name}*\n"
-            f"💰 Price: {product.price} coins\n"
-            f"📦 Stock: {product.stock}\n"
-            f"🏷️ Category: {product.category or 'N/A'}\n"
-            f"{product.description or 'No description available.'}\n\n"
-        )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+# Inside product_list in handlers_admin/products.py
 
+# handlers_admin/products.py
+
+async def product_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        async with SessionLocal() as session:
+            products = await get_all_products(session)
+        if not products:
+            await update.message.reply_text("No products found.")
+            return
+        msg = ""
+        for product in products:
+            msg += (
+                f"*ID: {product.id}*\n"
+                f"*{product.name}*\n"
+                f"💰 Price: {product.price} coins\n"
+                f"📦 Stock: {product.stock}\n"
+                f"🏷️ Category: {product.category or 'N/A'}\n"
+                f"📸 Location photos: {getattr(product, 'location_img_count', 0)}\n"
+                f"{product.description or 'No description available.'}\n\n"
+            )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        print("Exception in product_list:", e)
+        await update.message.reply_text(f"Error: {e}")
 # --- Add Product ---
 async def add_product_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter product name:")
@@ -155,25 +163,31 @@ async def add_product_photo_cmd(update: Update, context: ContextTypes.DEFAULT_TY
 async def receive_product_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = update.message.text.strip()
     context.user_data["photo_product_id"] = product_id
-    await update.message.reply_text("Now send the presentation photo for this product:")
+    await update.message.reply_text("Now send the presentation photo for this product (with optional caption):")
     return PHOTO_RECEIVE
 
 async def save_product_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.photo:
-        await update.message.reply_text("Please send a photo.")
-        return PHOTO_RECEIVE
-    file_id = update.message.photo[-1].file_id
-    product_id = context.user_data["photo_product_id"]
-    async with SessionLocal() as session:
-        product = await get_product_by_id(session, product_id)
-        if not product:
-            await update.message.reply_text("Product not found.")
-            return ConversationHandler.END
-        product.image = file_id
-        await session.commit()
-    await update.message.reply_text("✅ Presentation photo added to product.", reply_markup=ReplyKeyboardRemove())
-    context.user_data.clear()
-    return ConversationHandler.END
+    try:
+        if not update.message.photo:
+            await update.message.reply_text("Please send a photo.")
+            return PHOTO_RECEIVE
+        file_id = update.message.photo[-1].file_id
+        caption = update.message.caption or ""
+        product_id = context.user_data["photo_product_id"]
+        async with SessionLocal() as session:
+            product = await get_product_by_id(session, product_id)
+            if not product:
+                await update.message.reply_text("Product not found.")
+                return ConversationHandler.END
+            product.image = file_id
+            await session.commit()
+        await update.message.reply_text("✅ Presentation photo and caption added to product.", reply_markup=ReplyKeyboardRemove())
+        context.user_data.clear()
+        return ConversationHandler.END
+    except Exception as e:
+        print("Exception in save_product_photo:", e)
+        await update.message.reply_text(f"Error: {e}")
+        return ConversationHandler.END
 
 # --- Add Location Photo (Bulk) by Product ID ---
 async def add_location_photo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -197,10 +211,6 @@ async def save_location_photo_bulk(update: Update, context: ContextTypes.DEFAULT
     caption = update.message.caption or ""
     product_id = context.user_data["location_product_id"]
     async with SessionLocal() as session:
-        product = await get_product_by_id(session, product_id)
-        if not product:
-            await update.message.reply_text("Product not found.")
-            return ConversationHandler.END
         await add_location_photo(session, product_id, file_id, caption)
     await update.message.reply_text("Location photo added. Send another or type /done to finish.")
     return LOCATION_RECEIVE
@@ -228,6 +238,19 @@ async def send_location_photos(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
     media = [InputMediaPhoto(photo.file_id, caption=photo.caption or None) for photo in photos]
     await update.message.reply_media_group(media)
+    return ConversationHandler.END
+
+# --- Show Number of Location Photos for a Product ---
+async def show_location_photo_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    product_id = update.message.text.strip()
+    async with SessionLocal() as session:
+        from utils.db_utils import count_location_photos
+        product = await get_product_by_id(session, product_id)
+        if not product:
+            await update.message.reply_text("Product not found.")
+            return ConversationHandler.END
+        num_photos = await count_location_photos(session, product_id)
+    await update.message.reply_text(f"Product {product.name} has {num_photos} location photos.")
     return ConversationHandler.END
 
 # --- Low Stock Command ---

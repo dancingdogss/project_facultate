@@ -86,14 +86,16 @@ async def main():
 
     # --- Edit Product Conversation Handler ---
     edit_product_conv = ConversationHandler(
-        entry_points=[CommandHandler("editproduct", edit_product_cmd)],
-        states={
-            EDIT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_product_id)],
-            EDIT_FIELD: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_product_field)],
-            EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_product_value)],
-        },
-        fallbacks=[],
-    )
+    entry_points=[CommandHandler("editproduct", edit_product_cmd)],
+    states={
+        EDIT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_product_id)],
+        EDIT_FIELD: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_product_field)],
+        EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_product_value)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel_add_product)],  # Add a cancel handler
+    per_chat=True,
+    per_user=True,
+  )
     app.add_handler(edit_product_conv)
 
     # --- Remove Product Conversation Handler ---

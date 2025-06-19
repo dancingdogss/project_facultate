@@ -4,7 +4,8 @@ from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Foreig
 import os
 from datetime import datetime
 
-DATABASE_URL = "sqlite+aiosqlite:///./botdata.db"
+DATABASE_URL = "sqlite+aiosqlite:///e:/project_facultate-project-facultate-betterUI-stillstubs/botdata.db"
+print("DATABASE_URL:", DATABASE_URL)
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -22,8 +23,7 @@ class Product(Base):
     description = Column(String)
     category = Column(String)
     image = Column(String)
-    location_image = Column(String)
-    location_caption = Column(String)
+    location_img_count = Column(Integer, default=0)
 
 class User(Base):
     __tablename__ = "users"
@@ -41,7 +41,9 @@ class Order(Base):
     status = Column(String)
     created_at = Column(DateTime)
     location_photo_id = Column(String, ForeignKey("location_photos.id"), nullable=True)
+    delivered_count = Column(Integer, default=0)
 # Add more models as needed (Deliveries, Profits, etc.)
+
 class LocationPhoto(Base):
     __tablename__ = "location_photos"
     id = Column(String, primary_key=True, index=True)
