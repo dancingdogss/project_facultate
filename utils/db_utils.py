@@ -5,6 +5,18 @@ import uuid
 from datetime import datetime
 import os
 
+# --- Helper: Always update location_img_count to match unused photos ---
+async def update_location_img_count(session, product_id):
+    count = await session.scalar(
+        select(func.count()).select_from(LocationPhoto)
+        .where(LocationPhoto.product_id == product_id, LocationPhoto.is_delivered == False)
+    )
+    product = await session.get(Product, product_id)
+    if product:
+        print(f"Updating {product.name} ({product.id}) location_img_count: {product.location_img_count} -> {count}")
+        product.location_img_count = count
+        await session.commit()
+
 # --- User Management ---
 async def get_user(session: AsyncSession, user_id: str):
     result = await session.execute(select(User).where(User.id == user_id))
@@ -119,18 +131,11 @@ async def add_product(session, name, price, stock, category, description):
     return new_product
 
 async def add_product_photo(session, product_id, file_id_or_name):
-    """
-    file_id_or_name: can be a Telegram file_id or a local filename (e.g., 'cox.png').
-    This implementation assumes you use local files from products_pics.
-    """
     product = await session.get(Product, product_id)
     if product:
-        # If file_id_or_name is a filename, store the path
         if not file_id_or_name.startswith("http") and not file_id_or_name.startswith("AgAC"):
-            # It's a local file, store the path
             product.image = os.path.join("products_pics", file_id_or_name)
         else:
-            # It's a Telegram file_id or URL
             product.image = file_id_or_name
         await session.commit()
         return product
@@ -147,13 +152,8 @@ async def add_location_photo(session, product_id, file_id, caption=""):
         is_delivered=False
     )
     session.add(photo)
-    # Update the count after adding
-    count = await session.scalar(
-        select(func.count()).select_from(LocationPhoto).where(LocationPhoto.product_id == product_id)
-    )
-    product = await session.get(Product, product_id)
-    if product:
-        product.location_img_count = count
+    await session.flush()  # flush so update_location_img_count sees the new photo
+    await update_location_img_count(session, product_id)
     await session.commit()
 
 async def remove_location_photo(session, photo_id):
@@ -161,13 +161,8 @@ async def remove_location_photo(session, photo_id):
     if photo:
         product_id = photo.product_id
         await session.delete(photo)
-        # Update the count after removing
-        count = await session.scalar(
-            select(func.count()).select_from(LocationPhoto).where(LocationPhoto.product_id == product_id)
-        )
-        product = await session.get(Product, product_id)
-        if product:
-            product.location_img_count = count
+        await session.flush()
+        await update_location_img_count(session, product_id)
         await session.commit()
         return True
     return False
@@ -182,11 +177,12 @@ async def get_unused_location_photo(session, product_id):
     return result.scalar_one_or_none()
 
 async def mark_location_photo_delivered(session, photo_id, order_id):
-    result = await session.execute(select(LocationPhoto).where(LocationPhoto.id == photo_id))
-    photo = result.scalar_one_or_none()
-    if photo:
+    photo = await session.get(LocationPhoto, photo_id)
+    if photo and not photo.is_delivered:
         photo.is_delivered = True
         photo.order_id = order_id
+        await session.flush()
+        await update_location_img_count(session, photo.product_id)
         await session.commit()
 
 async def count_location_photos(session, product_id):
@@ -332,3 +328,10 @@ async def archive_delivered_photo(session, photo, order_id):
     )
     session.add(delivered)
     await session.commit()
+
+async def count_unused_location_photos(session, product_id):
+    count = await session.scalar(
+        select(func.count()).select_from(LocationPhoto)
+        .where(LocationPhoto.product_id == product_id, LocationPhoto.is_delivered == False)
+    )
+    return count

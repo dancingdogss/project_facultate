@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base, relationship
+from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey
 import os
 from datetime import datetime
@@ -10,9 +10,6 @@ print("DATABASE_URL:", DATABASE_URL)
 engine = create_async_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 Base = declarative_base()
-
-
-
 
 class Product(Base):
     __tablename__ = "products"
@@ -36,13 +33,12 @@ class Order(Base):
     id = Column(String, primary_key=True, index=True)
     user_id = Column(String)
     product_id = Column(String, ForeignKey("products.id"))
-    product_name = Column(String)  # Add this line if missing
+    product_name = Column(String)
     quantity = Column(Integer)
     status = Column(String)
     created_at = Column(DateTime)
     location_photo_id = Column(String, ForeignKey("location_photos.id"), nullable=True)
     delivered_count = Column(Integer, default=0)
-# Add more models as needed (Deliveries, Profits, etc.)
 
 class LocationPhoto(Base):
     __tablename__ = "location_photos"
@@ -60,8 +56,6 @@ class DeliveredPhoto(Base):
     product_id = Column(String)
     order_id = Column(String)
     delivered_at = Column(DateTime, default=datetime.utcnow)
-
-
 
 class Profit(Base):
     __tablename__ = "profits"
@@ -84,11 +78,9 @@ class Delivery(Base):
     stock_id = Column(String)
     delivered_at = Column(DateTime)
 
-
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-# Also add this function to initialize the database
 async def init_db():
     await create_tables()

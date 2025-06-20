@@ -86,6 +86,9 @@ All of the above have been tested and are working as intended.
 - All data is persistent in SQLite.
 - The bot uses async handlers and the latest python-telegram-bot API.
 - Inline buttons are used for navigation and order flow.
+- The `location_img_count` column in the `products` table is now always kept in sync with the number of unused (not delivered) location photos for each product.
+- Every time a location photo is added, delivered, or removed, the count is recalculated and updated in the database.
+- The `/productlist` command and admin views always reflect the true number of available location photos.
 - **Order filtering and main menu now work seamlessly together.**
 - **Admins receive automatic low stock alerts.**
 - **Users are notified of order status changes.**

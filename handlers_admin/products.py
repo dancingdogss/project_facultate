@@ -3,7 +3,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from db import SessionLocal
 from utils.db_utils import (
     get_all_products, add_product, remove_product, edit_product,
-    add_product_photo, get_product_by_id, add_location_photo, get_location_photos_by_product
+    add_product_photo, get_product_by_id, add_location_photo, get_location_photos_by_product,count_unused_location_photos
 )
 
 # States for ConversationHandler
@@ -23,20 +23,18 @@ async def product_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         async with SessionLocal() as session:
             products = await get_all_products(session)
-        if not products:
-            await update.message.reply_text("No products found.")
-            return
-        msg = ""
-        for product in products:
-            msg += (
-                f"*ID: {product.id}*\n"
-                f"*{product.name}*\n"
-                f"💰 Price: {product.price} coins\n"
-                f"📦 Stock: {product.stock}\n"
-                f"🏷️ Category: {product.category or 'N/A'}\n"
-                f"📸 Location photos: {getattr(product, 'location_img_count', 0)}\n"
-                f"{product.description or 'No description available.'}\n\n"
-            )
+            msg = ""
+            for product in products:
+                unused_count = await count_unused_location_photos(session, product.id)
+                msg += (
+                    f"*ID: {product.id}*\n"
+                    f"*{product.name}*\n"
+                    f"💰 Price: {product.price} coins\n"
+                    f"📦 Stock: {product.stock}\n"
+                    f"🏷️ Category: {product.category or 'N/A'}\n"
+                    f"📸 Unused location photos: {unused_count}\n"
+                    f"{product.description or 'No description available.'}\n\n"
+                )
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
         print("Exception in product_list:", e)
