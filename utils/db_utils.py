@@ -15,7 +15,7 @@ async def update_location_img_count(session, product_id):
     if product:
         print(f"Updating {product.name} ({product.id}) location_img_count: {product.location_img_count} -> {count}")
         product.location_img_count = count
-        await session.commit()
+        # await session.commit()
 
 # --- User Management ---
 async def get_user(session: AsyncSession, user_id: str):
@@ -154,7 +154,7 @@ async def add_location_photo(session, product_id, file_id, caption=""):
     session.add(photo)
     await session.flush()  # flush so update_location_img_count sees the new photo
     await update_location_img_count(session, product_id)
-    await session.commit()
+    await session.commit()  # commit to save the new photo
 
 async def remove_location_photo(session, photo_id):
     photo = await session.get(LocationPhoto, photo_id)

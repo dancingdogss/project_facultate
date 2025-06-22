@@ -2,6 +2,32 @@
 
 ---
 
+## ✅ Fixed & Working Commands (2025-06-22)
+
+- **/removeproduct** — Remove a product by its ID (UUID).
+- **/editproduct** — Edit a product by its ID (UUID).
+- **/addproductphoto** — Add a presentation photo for a product by ID.
+- **/addlocationphoto** — Bulk upload location photos for a product by ID (supports /done to finish).
+- **/showlocationphotos** — Show all available (not yet delivered) location photos for a product by ID.
+- **/setorderstatus** — Admin can set order status to completed/canceled; delivers photos or refunds as needed.
+- **/addcoins** — Add coins to a user's balance.
+- **/setcoins** — Set a user's balance.
+- **/exportorders** — Export all orders as CSV.
+- **/topusers** — Show top users by coin balance.
+- **/dashboard** — Show sales stats, top products, and low-stock alerts.
+- **/profits** — Show recent profits.
+- **/exportprofits** — Export profits as CSV.
+- **/allorders** — Interactive admin interface to filter orders by User, Order ID, Product, or Date, with grouped and copy-friendly output.
+- **Product Stock Alerts** — Admins are notified when product stock drops below a threshold.
+- **Order Status Notifications** — Users are notified automatically when their order status changes.
+- **Order Filtering & Search** — Admins can filter orders by user, product, date, or status; users can search their own order history.
+- **Main Menu Buttons** — All main menu buttons and flows work seamlessly with the new order filtering logic.
+
+All of the above have been tested and are working as intended.
+
+
+
+
 ## ✅ Fixed & Working Commands (2025-06-18)
 
 - **/removeproduct** — Remove a product by its ID (UUID).  
@@ -86,7 +112,7 @@ All of the above have been tested and are working as intended.
 - All data is persistent in SQLite.
 - The bot uses async handlers and the latest python-telegram-bot API.
 - Inline buttons are used for navigation and order flow.
-- The `location_img_count` column in the `products` table is now always kept in sync with the number of unused (not delivered) location photos for each product.
+- The `location_img_count` column in the `products` table is always kept in sync with the number of unused (not delivered) location photos for each product.
 - Every time a location photo is added, delivered, or removed, the count is recalculated and updated in the database.
 - The `/productlist` command and admin views always reflect the true number of available location photos.
 - **Order filtering and main menu now work seamlessly together.**
