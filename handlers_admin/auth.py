@@ -1,9 +1,10 @@
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
+from functools import wraps
 
-# --- Admin password (change as needed) ---
-ADMIN_PASSWORD = "Prajituri420!"
+ADMIN_IDS = [5501799605]  # Your admin user IDs
+ADMIN_PASSWORD = "Prajituri420!"  # Change as needed
 
 # --- Set up admin action logger ---
 admin_logger = logging.getLogger("admin_actions")
@@ -34,9 +35,29 @@ async def admin_password_input(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❌ Incorrect password. Try again or /cancel.")
         log_admin_action(update.effective_user.id, "Failed admin login attempt")
 
-# --- Utility: Check admin authentication in admin handlers ---
-async def require_admin_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("is_admin_authenticated"):
-        await update.message.reply_text("🔒 Please use /adminlogin to authenticate before using admin commands.")
-        return False
-    return True
+# --- Decorator: Require admin authentication for admin commands ---
+def require_admin_auth(func):
+    @wraps(func)
+    async def wrapper(update, context, *args, **kwargs):
+        user_id = update.effective_user.id
+        if user_id in ADMIN_IDS or context.user_data.get("is_admin_authenticated"):
+            return await func(update, context, *args, **kwargs)
+        else:
+            # Gracefully handle both messages and callback queries
+            context.user_data["awaiting_admin_password"] = True
+            cq = getattr(update, "callback_query", None)
+            if cq is not None:
+                try:
+                    await cq.answer("Please authenticate: use /adminlogin", show_alert=True)
+                except Exception:
+                    pass
+                try:
+                    await cq.message.reply_text("🔒 Please use /adminlogin and enter the admin password to access this command.")
+                except Exception:
+                    pass
+            else:
+                msg = getattr(update, "message", None) or getattr(update, "effective_message", None)
+                if msg is not None:
+                    await msg.reply_text("🔒 Please use /adminlogin and enter the admin password to access this command.")
+            return
+    return wrapper

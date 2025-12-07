@@ -159,7 +159,17 @@ async def myorders_cmd(update, context):
             f"📅 Date: {order.created_at}\n"
             f"🚦 Status: {order.status}\n\n"
         )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    # Split long messages to avoid Telegram's 4096 char limit
+    MAX_LEN = 4000
+    lines = msg.split('\n')
+    chunk = ""
+    for line in lines:
+        if len(chunk) + len(line) + 1 > MAX_LEN:
+            await update.message.reply_text(chunk, parse_mode="Markdown")
+            chunk = ""
+        chunk += line + "\n"
+    if chunk:
+        await update.message.reply_text(chunk, parse_mode="Markdown")
 
 # --- Stubs for compatibility ---
 

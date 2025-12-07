@@ -29,6 +29,14 @@ from handlers_admin.analytics import (
 from handlers_admin.auth import (
     adminlogin_cmd, admin_password_input, require_admin_auth, log_admin_action
 )
+# New admin interface imports
+from handlers_admin.interface import (
+    admin_panel,
+    admin_panel_callback_handler,
+)
+from handlers_admin.unified_interface import (
+    unified_admin_callback_handler
+)
 from handlers_user.menu import start, handle_menu, profile_cmd, deposit_ltc, categories_cmd, handle_back_buttons
 from handlers_user.orders import (
     handle_order, receive_quantity, confirm_order, cancel_order, orderstatus_cmd, myorders_cmd, back_to_orders_filters, simulate_deposit,
@@ -165,6 +173,8 @@ async def main():
             ],
         },
         fallbacks=[CallbackQueryHandler(cancel_order, pattern="^cancel_order$")],
+        per_chat=True,
+        per_user=True,
     )
     app.add_handler(order_conv)
 
@@ -191,6 +201,18 @@ async def main():
 
     # --- Register Admin Auth Command ---
     app.add_handler(CommandHandler("adminlogin", adminlogin_cmd))
+    
+    # --- Register New Admin Interface Commands ---
+    app.add_handler(CommandHandler("admin", admin_panel))
+    
+    # Route high-level admin interface callbacks to the interface handler
+    # Include product_ so interface can provide minimal fallbacks and forward advanced actions
+    admin_highlevel_pattern = r"^(admin_|orders_|photo_|user_|analytics_|settings_|product_)"
+    app.add_handler(CallbackQueryHandler(admin_panel_callback_handler, pattern=admin_highlevel_pattern))
+
+    # Route detailed actions to the unified handler (products and advanced actions)
+    unified_cb_pattern = r"^(product_|manage_|edit_|delete_|confirm_delete_|toggle_|duplicate_|complete_order_|cancel_order_|pending_order_|view_user_|view_product_|export_|product_selected_)"
+    app.add_handler(CallbackQueryHandler(unified_admin_callback_handler, pattern=unified_cb_pattern))
 
     # --- Register User Commands ---
     app.add_handler(CommandHandler("start", start))
@@ -215,6 +237,23 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    import nest_asyncio
-    nest_asyncio.apply()
-    asyncio.get_event_loop().run_until_complete(main())
+    import platform
+    if platform.system() == 'Windows':
+        import asyncio
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    
+    try:
+        import nest_asyncio
+        nest_asyncio.apply()
+        import asyncio
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("\nBot stopped by user.")
+    except Exception as e:
+        print(f"Bot stopped with error: {e}")
+    finally:
+        try:
+            loop.close()
+        except:
+            pass

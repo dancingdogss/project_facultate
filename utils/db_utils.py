@@ -13,9 +13,7 @@ async def update_location_img_count(session, product_id):
     )
     product = await session.get(Product, product_id)
     if product:
-        print(f"Updating {product.name} ({product.id}) location_img_count: {product.location_img_count} -> {count}")
         product.location_img_count = count
-        # await session.commit()
 
 # --- User Management ---
 async def get_user(session: AsyncSession, user_id: str):
@@ -122,7 +120,7 @@ async def add_product(session, name, price, stock, category, description):
         price=int(price),
         stock=int(stock),
         category=category,
-        image="",  # Will be set by add_product_photo if needed
+        image="",
         description=description,
         location_img_count=0
     )
@@ -142,7 +140,6 @@ async def add_product_photo(session, product_id, file_id_or_name):
     return None
 
 # --- Location Photo Management ---
-
 async def add_location_photo(session, product_id, file_id, caption=""):
     photo = LocationPhoto(
         id=str(uuid.uuid4()),
@@ -152,9 +149,9 @@ async def add_location_photo(session, product_id, file_id, caption=""):
         is_delivered=False
     )
     session.add(photo)
-    await session.flush()  # flush so update_location_img_count sees the new photo
+    await session.flush()
     await update_location_img_count(session, product_id)
-    await session.commit()  # commit to save the new photo
+    await session.commit()
 
 async def remove_location_photo(session, photo_id):
     photo = await session.get(LocationPhoto, photo_id)
@@ -192,7 +189,6 @@ async def count_location_photos(session, product_id):
     return count
 
 # --- Product Management (continued) ---
-
 async def get_product(session: AsyncSession, product_id: str):
     result = await session.execute(select(Product).where(Product.id == product_id))
     return result.scalar_one_or_none()
@@ -203,7 +199,7 @@ async def get_product_by_name(session, name):
 
 async def get_products_by_category(session, category):
     result = await session.execute(select(Product).where(Product.category == category))
-    return result.scalars().all() 
+    return result.scalars().all()
 
 async def get_product_by_id(session, product_id):
     return await session.get(Product, product_id)
@@ -317,17 +313,6 @@ async def add_user_balance(session, user_id, amount):
         session.add(user)
     await session.commit()
     return user
-
-async def archive_delivered_photo(session, photo, order_id):
-    delivered = DeliveredPhoto(
-        id=str(uuid.uuid4()),
-        file_id=photo.file_id,
-        product_id=photo.product_id,
-        order_id=order_id,
-        delivered_at=datetime.utcnow()
-    )
-    session.add(delivered)
-    await session.commit()
 
 async def count_unused_location_photos(session, product_id):
     count = await session.scalar(

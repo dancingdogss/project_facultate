@@ -6,11 +6,12 @@ from sqlalchemy import text
 from handlers_admin.auth import require_admin_auth, log_admin_action
 from config import DEFAULT_START_COINS
 from datetime import datetime
+import csv
+import io
 
 # --- Profits Command ---
+@require_admin_auth
 async def profits_cmd(update, context):
-    if not await require_admin_auth(update, context):
-        return
     async with SessionLocal() as session:
         result = await session.execute(
             text("SELECT SUM(o.quantity * p.price) FROM orders o JOIN products p ON o.product_id = p.id WHERE o.status = 'completed'")
@@ -20,9 +21,8 @@ async def profits_cmd(update, context):
     log_admin_action(update.effective_user.id, update.message.text)
 
 # --- Export Profits Command ---
+@require_admin_auth
 async def export_profits(update, context):
-    if not await require_admin_auth(update, context):
-        return
     async with SessionLocal() as session:
         result = await session.execute(
             text(
@@ -34,7 +34,6 @@ async def export_profits(update, context):
     if not rows:
         await update.message.reply_text("No profits to export.")
         return
-    import csv, io
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Order ID", "User ID", "Product", "Quantity", "Unit Price", "Status", "Created At", "Profit"])
@@ -46,9 +45,8 @@ async def export_profits(update, context):
     log_admin_action(update.effective_user.id, update.message.text)
 
 # --- Add Coins Command ---
+@require_admin_auth
 async def addcoins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await require_admin_auth(update, context):
-        return
     args = update.message.text.split()
     if len(args) != 3:
         await update.message.reply_text("Usage: /addcoins <user_id> <amount>")
@@ -70,9 +68,8 @@ async def addcoins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_admin_action(update.effective_user.id, update.message.text)
 
 # --- Set Coins Command ---
+@require_admin_auth
 async def setcoins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await require_admin_auth(update, context):
-        return
     args = update.message.text.split()
     if len(args) != 3:
         await update.message.reply_text("Usage: /setcoins <user_id> <amount>")
@@ -93,11 +90,9 @@ async def setcoins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Set user {user_id} balance to {amount}.")
     log_admin_action(update.effective_user.id, update.message.text)
 
-# --- Top Users Command ---
-
+# --- All Users Command ---
+@require_admin_auth
 async def users_cmd(update, context):
-    if not await require_admin_auth(update, context):
-        return
     async with SessionLocal() as session:
         result = await session.execute(User.__table__.select())
         users = result.fetchall()
@@ -106,15 +101,15 @@ async def users_cmd(update, context):
         return
     msg = "👥 All Users:\n"
     for u in users:
-        msg += f"- ID: {u.id} | Joined: {u.join_date.strftime('%Y-%m-%d %H:%M:%S') if u.join_date else 'N/A'} | Balance: {u.balance}\n"
+        join_date = u.join_date.strftime('%Y-%m-%d %H:%M:%S') if hasattr(u, 'join_date') and u.join_date else 'N/A'
+        msg += f"- ID: {u.id} | Joined: {join_date} | Balance: {u.balance}\n"
     await update.message.reply_text(msg)
     log_admin_action(update.effective_user.id, update.message.text)
 
+# --- Top Users Command ---
+@require_admin_auth
 async def topusers_cmd(update, context):
-    if not await require_admin_auth(update, context):
-        return
     async with SessionLocal() as session:
-        from db import User
         result = await session.execute(
             User.__table__.select().order_by(User.balance.desc()).limit(10)
         )
@@ -129,9 +124,8 @@ async def topusers_cmd(update, context):
     log_admin_action(update.effective_user.id, update.message.text)
 
 # --- Dashboard Command ---
+@require_admin_auth
 async def dashboard_cmd(update, context):
-    if not await require_admin_auth(update, context):
-        return
     async with SessionLocal() as session:
         # Top products by sales
         result = await session.execute(

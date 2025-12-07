@@ -5,6 +5,7 @@ import csv
 from datetime import datetime
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
+from handlers_admin.auth import require_admin_auth
 from db import SessionLocal
 from utils.db_utils import (
     get_all_orders, get_order_by_id, get_product_by_id, get_location_photos_by_product,
@@ -15,6 +16,7 @@ SET_ORDER_ID, SET_ORDER_STATUS = range(2)
 
 # --- ALL ORDERS FILTER INTERFACE ---
 
+@require_admin_auth
 async def all_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("By User", callback_data="filter_user")],
@@ -28,6 +30,7 @@ async def all_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+@require_admin_auth
 async def filter_orders_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -47,6 +50,7 @@ async def filter_orders_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.message.reply_text(prompt[filter_type])
     context.user_data["awaiting_filter_value"] = True
 
+@require_admin_auth
 async def filter_value_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_filter_value"):
         return
@@ -56,6 +60,7 @@ async def filter_value_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.pop("awaiting_filter_value", None)
     context.user_data.pop("filter_type", None)
 
+@require_admin_auth
 async def show_orders(update, context, filter_type=None, filter_value=None):
     async with SessionLocal() as session:
         orders = await get_all_orders(session)
@@ -80,7 +85,7 @@ async def show_orders(update, context, filter_type=None, filter_value=None):
 
     msg = ""
     for status, group in grouped.items():
-        msg += f"\n<b>{status} Orders ({len(group)}):</b>\n"
+        msg = f"\n<b>{status} Orders ({len(group)}):</b>\n"
         msg += "<pre>OrderID                             UserID   Product         Qty   Date\n"
         msg += "---------------------------------  -------  --------------  ----  ----------\n"
         for o in group:
@@ -89,20 +94,36 @@ async def show_orders(update, context, filter_type=None, filter_value=None):
         for o in group:
             msg += f"Full Order ID: <code>{o.id}</code>\n"
 
-    await update.message.reply_text(msg, parse_mode="HTML")
+        # If message is too long, split by lines and send in chunks
+        MAX_LEN = 3500
+        if len(msg) > MAX_LEN:
+            lines = msg.split('\n')
+            chunk = ""
+            for line in lines:
+                if len(chunk) + len(line) + 1 > MAX_LEN:
+                    await update.message.reply_text(chunk, parse_mode="HTML")
+                    chunk = ""
+                chunk += line + "\n"
+            if chunk:
+                await update.message.reply_text(chunk, parse_mode="HTML")
+        else:
+            await update.message.reply_text(msg, parse_mode="HTML")
 
 # --- Set Order Status Implementation ---
 
+@require_admin_auth
 async def set_order_status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter the order ID to update:")
     return SET_ORDER_ID
 
+@require_admin_auth
 async def set_order_status_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     order_id = update.message.text.strip()
     context.user_data["set_order_id"] = order_id
     await update.message.reply_text("Enter new status (completed/canceled):")
     return SET_ORDER_STATUS
 
+@require_admin_auth
 async def set_order_status_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = update.message.text.strip().lower()
     order_id = context.user_data["set_order_id"]
@@ -174,7 +195,7 @@ async def set_order_status_status(update: Update, context: ContextTypes.DEFAULT_
     return ConversationHandler.END
 
 # --- Fulfill Order and Deliver Photos ---
-
+# DO NOT DECORATE THIS FUNCTION!
 async def fulfill_order_and_deliver_photos(session, bot, order, user, product, admin_chat_id=None):
     from utils.db_utils import get_location_photos_by_product
 
@@ -236,6 +257,7 @@ async def fulfill_order_and_deliver_photos(session, bot, order, user, product, a
 
 # --- Export Orders Implementation ---
 
+@require_admin_auth
 async def export_orders(update, context):
     async with SessionLocal() as session:
         orders = await get_all_orders(session)
@@ -252,9 +274,11 @@ async def export_orders(update, context):
 
 # --- Stubs for other admin order commands ---
 
+@require_admin_auth
 async def deliveries_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Deliveries (stub)")
 
+@require_admin_auth
 async def findorder_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = update.message.text.split()
     if len(args) < 3:
@@ -302,8 +326,10 @@ async def findorder_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
 
+@require_admin_auth
 async def export_deliveries(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Export deliveries (stub)")
 
+@require_admin_auth
 async def removedelivery_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Remove delivery (stub)")

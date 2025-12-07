@@ -1,9 +1,10 @@
 from telegram import Update, ReplyKeyboardRemove, InputMediaPhoto
 from telegram.ext import ContextTypes, ConversationHandler
+from handlers_admin.auth import require_admin_auth
 from db import SessionLocal
 from utils.db_utils import (
     get_all_products, add_product, remove_product, edit_product,
-    add_product_photo, get_product_by_id, add_location_photo, get_location_photos_by_product,count_unused_location_photos
+    add_product_photo, get_product_by_id, add_location_photo, get_location_photos_by_product, count_unused_location_photos, count_location_photos
 )
 
 # States for ConversationHandler
@@ -15,10 +16,7 @@ LOCATION_PRODUCT_ID, LOCATION_RECEIVE = 11, 12
 SHOW_LOCATION_PHOTOS = 14
 
 # --- Product List ---
-# Inside product_list in handlers_admin/products.py
-
-# handlers_admin/products.py
-
+@require_admin_auth
 async def product_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         async with SessionLocal() as session:
@@ -39,16 +37,20 @@ async def product_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("Exception in product_list:", e)
         await update.message.reply_text(f"Error: {e}")
+
 # --- Add Product ---
+@require_admin_auth
 async def add_product_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter product name:")
     return ADD_NAME
 
+@require_admin_auth
 async def add_product_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["add_product_name"] = update.message.text
     await update.message.reply_text("Enter product price (number):")
     return ADD_PRICE
 
+@require_admin_auth
 async def add_product_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price = update.message.text
     if not price.isdigit():
@@ -58,6 +60,7 @@ async def add_product_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter product stock (number):")
     return ADD_STOCK
 
+@require_admin_auth
 async def add_product_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stock = update.message.text
     if not stock.isdigit():
@@ -67,11 +70,13 @@ async def add_product_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter product category:")
     return ADD_CATEGORY
 
+@require_admin_auth
 async def add_product_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["add_product_category"] = update.message.text
     await update.message.reply_text("Enter product description (or type '-' for none):")
     return ADD_DESCRIPTION
 
+@require_admin_auth
 async def add_product_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
     if description == "-":
@@ -92,16 +97,19 @@ async def add_product_description(update: Update, context: ContextTypes.DEFAULT_
     context.user_data.clear()
     return ConversationHandler.END
 
+@require_admin_auth
 async def cancel_add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Product addition cancelled.", reply_markup=ReplyKeyboardRemove())
     context.user_data.clear()
     return ConversationHandler.END
 
 # --- Remove Product by ID ---
+@require_admin_auth
 async def remove_product_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter the ID of the product to remove:")
     return REMOVE_ID
 
+@require_admin_auth
 async def remove_product_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = update.message.text.strip()
     async with SessionLocal() as session:
@@ -114,10 +122,12 @@ async def remove_product_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # --- Edit Product by ID ---
+@require_admin_auth
 async def edit_product_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter the ID of the product to edit:")
     return EDIT_ID
 
+@require_admin_auth
 async def edit_product_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = update.message.text.strip()
     context.user_data["edit_product_id"] = product_id
@@ -126,6 +136,7 @@ async def edit_product_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return EDIT_FIELD
 
+@require_admin_auth
 async def edit_product_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
     field = update.message.text.lower()
     if field not in ["name", "price", "stock", "category", "description"]:
@@ -137,6 +148,7 @@ async def edit_product_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(f"Enter new value for {field}:")
     return EDIT_VALUE
 
+@require_admin_auth
 async def edit_product_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     value = update.message.text
     product_id = context.user_data["edit_product_id"]
@@ -154,16 +166,19 @@ async def edit_product_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ConversationHandler.END
 
 # --- Add Product Photo by ID ---
+@require_admin_auth
 async def add_product_photo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter the product ID to add a presentation photo to:")
     return PHOTO_PRODUCT_ID
 
+@require_admin_auth
 async def receive_product_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = update.message.text.strip()
     context.user_data["photo_product_id"] = product_id
     await update.message.reply_text("Now send the presentation photo for this product (with optional caption):")
     return PHOTO_RECEIVE
 
+@require_admin_auth
 async def save_product_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not update.message.photo:
@@ -188,10 +203,12 @@ async def save_product_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
 
 # --- Add Location Photo (Bulk) by Product ID ---
+@require_admin_auth
 async def add_location_photo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter the product ID to add location photos to:")
     return LOCATION_PRODUCT_ID
 
+@require_admin_auth
 async def receive_location_photo_bulk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = update.message.text.strip()
     context.user_data["location_product_id"] = product_id
@@ -201,6 +218,7 @@ async def receive_location_photo_bulk(update: Update, context: ContextTypes.DEFA
     )
     return LOCATION_RECEIVE
 
+@require_admin_auth
 async def save_location_photo_bulk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.photo:
         await update.message.reply_text("Please send a photo or type /done to finish.")
@@ -213,16 +231,19 @@ async def save_location_photo_bulk(update: Update, context: ContextTypes.DEFAULT
     await update.message.reply_text("Location photo added. Send another or type /done to finish.")
     return LOCATION_RECEIVE
 
+@require_admin_auth
 async def done_adding_location_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Done adding location photos.", reply_markup=ReplyKeyboardRemove())
     context.user_data.clear()
     return ConversationHandler.END
 
 # --- Show Location Photos by Product ID ---
+@require_admin_auth
 async def show_location_photos_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enter the product ID to show location photos for:")
     return SHOW_LOCATION_PHOTOS
 
+@require_admin_auth
 async def send_location_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = update.message.text.strip()
     async with SessionLocal() as session:
@@ -239,19 +260,20 @@ async def send_location_photos(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 # --- Show Number of Location Photos for a Product ---
+@require_admin_auth
 async def show_location_photo_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = update.message.text.strip()
     async with SessionLocal() as session:
-        from utils.db_utils import count_location_photos
+        num_photos = await count_location_photos(session, product_id)
         product = await get_product_by_id(session, product_id)
         if not product:
             await update.message.reply_text("Product not found.")
             return ConversationHandler.END
-        num_photos = await count_location_photos(session, product_id)
     await update.message.reply_text(f"Product {product.name} has {num_photos} location photos.")
     return ConversationHandler.END
 
 # --- Low Stock Command ---
+@require_admin_auth
 async def lowstock_cmd(update, context):
     LOW_STOCK_THRESHOLD = 5
     async with SessionLocal() as session:

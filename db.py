@@ -4,7 +4,7 @@ from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Foreig
 import os
 from datetime import datetime
 
-DATABASE_URL = "sqlite+aiosqlite:///e:/project_facultate-project-facultate-betterUI-stillstubs/botdata.db"
+DATABASE_URL = "sqlite+aiosqlite:///d:/project_facultate-project-facultate-betterUI-stillstubs/botdata.db"
 print("DATABASE_URL:", DATABASE_URL)
 
 engine = create_async_engine(DATABASE_URL, echo=True)
